@@ -81,10 +81,10 @@ def test_confluence():
 
 def test_version_only():
     seen = []
-    page = {"title": "Образец", "version": {"number": 12}}
+    page = {"title": "Эталон", "version": {"number": 12}}
     env = {"CONFLUENCE_BASE_URL": "https://c.example.com", "CONFLUENCE_TOKEN": "ct"}
-    assert fetch_version("110167415", env, opener=make_opener(page, seen)) == "110167415\t12\tОбразец"
-    assert seen[0].full_url.endswith("/rest/api/content/110167415?expand=version")
+    assert fetch_version("110167390", env, opener=make_opener(page, seen)) == "110167390\t12\tЭталон"
+    assert seen[0].full_url.endswith("/rest/api/content/110167390?expand=version")
 
 
 def test_missing_env_lists_names(capsys, monkeypatch):
