@@ -335,6 +335,25 @@ def test_draft_diagrams(draft_task):
     assert not any("устарел" in e for e in errors)
 
 
+def test_draft_gateway_prefix_in_text(draft_task):
+    _write(draft_task, "03-changes", "# Доработки",
+           "1. Метод `GET /api/backoffice/v1/orders/refunds` ‹R-01›\n2. Метод `GET /backoffice/orders/refunds` ‹R-01›")
+    _assemble(draft_task)
+    assert validate_task(draft_task) == [
+        "draft/03-changes.md: «/api/backoffice…» — префикс шлюза; метод пиши, как он объявлен в сервисе"
+    ]
+
+
+def test_draft_dangling_item_ref(draft_task):
+    _write(draft_task, "03-changes", "# Доработки",
+           "1. Найти пользователя ‹R-01›\n   1. Не найден — создать учётную запись (п.2).\n2. Создать учётную запись ‹R-01›")
+    _write(draft_task, "08-testing", "# Тестирование и регресс", "Проверить п.2 и п. 7 ‹R-01›")
+    _assemble(draft_task)
+    assert validate_task(draft_task) == [
+        "draft/08-testing.md: «п.7» — такого пункта нет; номера пунктов при правке не сдвигай, ссылки сверь"
+    ]
+
+
 def test_draft_openapi(draft_task):
     (draft_task / "draft/api").mkdir()
     (draft_task / "draft/api/lkp-back.yaml").write_text(

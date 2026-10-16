@@ -258,6 +258,16 @@ def test_openapi_errors():
     assert openapi_errors("openapi: 3.0.3\n") == ["нет info.title", "нет info.version", "нет paths"]
 
 
+def test_openapi_gateway_prefix():
+    bad = GOOD_OPENAPI.replace("/api/questionnaires:", "/api/backoffice/questionnaires:")
+    bad = bad.replace("'/internal/promocodes/{code}/owner':", "/internal/v1/promocodes:")
+    assert [e for e in openapi_errors(bad) if "шлюза" in e] == [
+        "путь /api/backoffice/questionnaires с префиксом шлюза — пиши путь, как он объявлен в сервисе",
+        "путь /internal/v1/promocodes с префиксом шлюза — пиши путь, как он объявлен в сервисе",
+    ]
+    assert [e for e in openapi_errors(GOOD_OPENAPI) if "шлюза" in e] == []
+
+
 def test_openapi_tag_matches_prefix():
     bad = GOOD_OPENAPI.replace("      tags: [Internal]", "      tags:\n        - Api")
     bad = bad.replace("      tags: [Api]", "      tags: [Backoffice]")

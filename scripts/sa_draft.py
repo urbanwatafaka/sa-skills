@@ -10,7 +10,7 @@ from datetime import date
 from pathlib import Path
 
 import sa_puml
-from sa_artifacts import ArtifactError, find_refs, find_table, parse_questions, parse_tables, split_frontmatter
+from sa_artifacts import GATEWAY_PATH_RE, ArtifactError, find_refs, find_table, parse_questions, parse_tables, split_frontmatter
 from sa_state import ARTIFACTS, PUBLISH_FILE, file_sha1, load_state, save_state, write_atomic
 from sa_template import Manifest, Section, load_manifest
 
@@ -24,6 +24,8 @@ OPENAPI_REF_RE = re.compile(r"api/[A-Za-z0-9_.-]+\.ya?ml")
 DTO_RE = re.compile(r"\{\{DTO:([A-Za-z0-9_]+)\}\}")
 STUB_RE = re.compile(r"^[ \t]*(?:[-*][ \t]+)?(Не применимо|Изменения не требуются|Без изменений)(?![\w-])", re.M | re.I)
 CODE_REF_RE = re.compile(r"(?<![\w-])(?:code|код):[ \t]*[\w./-]+:\d+")
+ITEM_REF_RE = re.compile(r"(?<![\w.])п\.[ \t]?(\d+)\b")
+TOP_ITEM_RE = re.compile(r"^(\d+)\.[ \t]", re.M)
 API_PREFIXES = ("/api", "/backoffice", "/public", "/internal")
 PREFIX_TAGS = {"/api": "Api", "/backoffice": "Backoffice", "/public": "Public", "/internal": "Internal"}
 HTTP_METHODS = {"get", "put", "post", "delete", "patch", "options", "head", "trace"}
@@ -49,6 +51,16 @@ def trace_refs(text: str) -> list[str]:
 
 def placeholders(text: str) -> list[str | None]:
     return [match.group(1) for match in PLACEHOLDER_RE.finditer(text)]
+
+
+def item_refs(text: str) -> list[int]:
+    """Номера из ссылок «п.N» / «п. N» на пункты нумерованного списка."""
+    return [int(n) for n in ITEM_REF_RE.findall(text)]
+
+
+def top_items(text: str) -> int:
+    """Наибольший номер пункта верхнего уровня (без отступа) в секции; 0 — нумерованных пунктов нет."""
+    return max((int(n) for n in TOP_ITEM_RE.findall(text)), default=0)
 
 
 def stubs(text: str) -> list[str]:
@@ -185,6 +197,8 @@ def openapi_errors(text: str) -> list[str]:
     for path in paths:
         if not any(path == prefix or path.startswith(prefix + "/") for prefix in API_PREFIXES):
             errors.append(f"путь {path} без префикса /api, /backoffice, /public или /internal")
+        elif GATEWAY_PATH_RE.match(path):
+            errors.append(f"путь {path} с префиксом шлюза — пиши путь, как он объявлен в сервисе")
     errors += _tag_errors(paths_block, step)
     return errors
 

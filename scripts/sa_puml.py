@@ -120,6 +120,7 @@ AUTONUMBER = 'autonumber "<b>[000]"'
 QUEUE_RE = re.compile(r'^queue[ \t]+(?:"[^"]*"[ \t]+as[ \t]+(\w+)|(\w+))', re.I)
 C2_REL_RE = re.compile(r'^Rel_(?:D|U|L|R|Down|Up|Left|Right)\(\s*[\w.]+\s*,\s*[\w.]+\s*,\s*"([^"]*)"')
 C2_NUMBER_RE = re.compile(r"^\d+\)")
+GATEWAY_PATH_RE = re.compile(r"(?<![\w/])/(?:api|backoffice|public|internal)/(?:api|backoffice|public|internal|v\d+)(?=/|\b)")
 
 
 def kind_errors(name: str, text: str) -> list[str]:
@@ -131,6 +132,9 @@ def kind_errors(name: str, text: str) -> list[str]:
             errors.append(f"строка {number}: цвет по имени без «#»: <color:red>, «#» — только с HEX")
         if COLOR_SPLIT_RE.search(line):
             errors.append(f"строка {number}: перенос \\n внутри <color:…> — отдельный тег на каждую строку")
+        gateway = GATEWAY_PATH_RE.search(line)
+        if gateway:
+            errors.append(f"строка {number}: «{gateway.group(0)}…» — префикс шлюза; метод пиши, как он объявлен в сервисе")
         include = INCLUDE_RE.match(line)
         if include and not include.group(1).startswith("https://"):
             errors.append(f"строка {number}: !include — только полный https:// URL")

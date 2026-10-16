@@ -5,6 +5,9 @@ import re
 from dataclasses import dataclass, field
 
 REF_RE = re.compile(r"\bQ-(?:PO|SA)-\d{2,}\b|\b(?:R|IM|D|RV)-\d{2,}\b")
+# Путь с префиксом шлюза: после префикса раздела идёт ещё один префикс раздела или версия —
+# /api/backoffice/v1/orders. Метод в ТЗ пишется так, как объявлен в сервисе: /backoffice/orders.
+GATEWAY_PATH_RE = re.compile(r"(?<![\w/])/(?:api|backoffice|public|internal)/(?:api|backoffice|public|internal|v\d+)(?=/|\b)")
 
 ID_PATTERNS = {
     "R": re.compile(r"R-\d{2,}"),

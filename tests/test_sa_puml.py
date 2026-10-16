@@ -67,6 +67,12 @@ def test_kafka_arrows_only_from_service():
     assert "стрелка из kafka" in errors[0]
 
 
+def test_gateway_prefix_on_arrows():
+    text = '@startuml\nautonumber "<b>[000]"\nA -> B: GET /api/backoffice/v1/orders\nA -> B: GET /backoffice/orders\n@enduml\n'
+    errors = sa_puml.kind_errors("x-sequence.puml", text)
+    assert errors == ["строка 3: «/api/backoffice…» — префикс шлюза; метод пиши, как он объявлен в сервисе"]
+
+
 def test_c2_relations_numbered():
     text = '@startuml\nskinparam linetype ortho\nRel_D(a, b, "1) вызов")\nRel_R(b, c, "запрос")\n' \
         'Rel_U(c, d, " 12) ответ", $tags="read")\n@enduml\n'

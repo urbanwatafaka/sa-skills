@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from sa_artifacts import (
+    GATEWAY_PATH_RE,
     ArtifactError,
     find_refs,
     find_table,
@@ -27,7 +28,9 @@ from sa_draft import (
     dto_errors,
     openapi_errors,
     placeholders,
+    item_refs,
     render_body,
+    top_items,
     without_open_questions,
     section_path,
     stubs,
@@ -419,6 +422,12 @@ def validate_draft(task_dir: Path, state: dict, known: dict) -> list[str]:
             errors.append(f"{rel}: заглушка «{stub}» — раздел или пункт без содержания не создаётся")
         for ref in CODE_REF_RE.findall(text):
             errors.append(f"{rel}: «{ref}» — ссылки на код остаются в артефактах задачи, не в ТЗ")
+        changes = section_path(task_dir, "03-changes")
+        limit = max(top_items(text), top_items(changes.read_text(encoding="utf-8")) if changes.exists() else 0)
+        for number in dict.fromkeys(n for n in item_refs(text) if n > limit):
+            errors.append(f"{rel}: «п.{number}» — такого пункта нет; номера пунктов при правке не сдвигай, ссылки сверь")
+        for path in dict.fromkeys(m.group(0) for m in GATEWAY_PATH_RE.finditer(text)):
+            errors.append(f"{rel}: «{path}…» — префикс шлюза; метод пиши, как он объявлен в сервисе")
         for token in trace_refs(text):
             if not any(is_id(kind, token) for kind in TRACE_KINDS):
                 errors.append(f"{rel}: «{token}» в ‹…› — не R-xx, IM-xx или D-xx")
