@@ -24,6 +24,8 @@ DTO_RE = re.compile(r"\{\{DTO:([A-Za-z0-9_]+)\}\}")
 STUB_RE = re.compile(r"^[ \t]*(?:[-*][ \t]+)?(Не применимо|Изменения не требуются|Без изменений)(?![\w-])", re.M | re.I)
 CODE_REF_RE = re.compile(r"(?<![\w-])(?:code|код):[ \t]*[\w./-]+:\d+")
 API_PREFIXES = ("/api", "/backoffice", "/public", "/internal")
+PREFIX_TAGS = {"/api": "Api", "/backoffice": "Backoffice", "/public": "Public", "/internal": "Internal"}
+HTTP_METHODS = {"get", "put", "post", "delete", "patch", "options", "head", "trace"}
 QUESTION_MARK = ":question:"
 OPEN_QUESTIONS = "# Открытые вопросы"
 HEADER_KEYS = ("status", "author", "jira", "template", "assembled")
@@ -119,6 +121,43 @@ def openapi_errors(text: str) -> list[str]:
     for path in paths:
         if not any(path == prefix or path.startswith(prefix + "/") for prefix in API_PREFIXES):
             errors.append(f"путь {path} без префикса /api, /backoffice, /public или /internal")
+    errors += _tag_errors(paths_block, step)
+    return errors
+
+
+def _tag_errors(paths_block: list[str], step: int) -> list[str]:
+    """Тег операции совпадает с разделом по префиксу пути: /api → Api, /backoffice → Backoffice и т.д."""
+    errors: list[str] = []
+    path, method, method_indent, in_tags = "", "", 0, False
+    for line in paths_block:
+        if not line.strip():
+            continue
+        indent = len(line) - len(line.lstrip())
+        text = line.strip()
+        if indent == step and text.endswith(":"):
+            path, method, in_tags = text[:-1].strip("'\""), "", False
+            continue
+        key = text.split(":", 1)[0].strip().lower()
+        if indent > step and key in HTTP_METHODS and text.endswith(":"):
+            method, method_indent, in_tags = key, indent, False
+            continue
+        if not method or indent <= method_indent:
+            in_tags = False
+            continue
+        tags: list[str] = []
+        if text.startswith("tags:"):
+            value = text[5:].strip()
+            if value.startswith("["):
+                tags = [t.strip().strip("'\"") for t in value.strip("[]").split(",") if t.strip()]
+            in_tags = not value
+        elif in_tags and text.startswith("- "):
+            tags = [text[2:].strip().strip("'\"")]
+        else:
+            in_tags = False
+        expected = next((tag for prefix, tag in PREFIX_TAGS.items() if path == prefix or path.startswith(prefix + "/")), None)
+        for tag in tags:
+            if expected and tag != expected:
+                errors.append(f"{method.upper()} {path}: тег {tag}, а по префиксу пути — {expected}")
     return errors
 
 

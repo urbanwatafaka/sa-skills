@@ -117,6 +117,9 @@ COLOR_SPLIT_RE = re.compile(r"<color:[^>]*>(?:(?!</color>).)*?\\n")
 INCLUDE_RE = re.compile(r"^!include(?:url)?[ \t]+(\S+)", re.I)
 SEQ_FORBIDDEN = ("alt", "loop", "opt", "par", "break", "critical", "group")
 AUTONUMBER = 'autonumber "<b>[000]"'
+QUEUE_RE = re.compile(r'^queue[ \t]+(?:"[^"]*"[ \t]+as[ \t]+(\w+)|(\w+))', re.I)
+C2_REL_RE = re.compile(r'^Rel_(?:D|U|L|R|Down|Up|Left|Right)\(\s*[\w.]+\s*,\s*[\w.]+\s*,\s*"([^"]*)"')
+C2_NUMBER_RE = re.compile(r"^\d+\)")
 
 
 def kind_errors(name: str, text: str) -> list[str]:
@@ -140,12 +143,23 @@ def kind_errors(name: str, text: str) -> list[str]:
             match = WORD_RE.match(line.lower())
             if match and match.group(0) in SEQ_FORBIDDEN:
                 errors.append(f"строка {number}: «{match.group(0)}» — ветки разделами == == и заметками note")
+        queues = {m.group(1) or m.group(2) for m in map(QUEUE_RE.match, lines) if m}
+        for number, line in enumerate(lines, start=1):
+            for queue in queues:
+                if re.match(rf"{re.escape(queue)}\s*(?:\[[^\]]*\])?\s*-+>", line):
+                    errors.append(
+                        f"строка {number}: стрелка из {queue} — Kafka только со стрелками от сервиса: "
+                        "запись Svc -> Kafka, чтение Svc --> Kafka"
+                    )
     elif kind == "c2":
         if "skinparam linetype ortho" not in lines:
             errors.append("нет skinparam linetype ortho")
         for number, line in enumerate(lines, start=1):
             if line.startswith(("Rel(", "BiRel(")):
                 errors.append(f"строка {number}: связи только Rel_D/Rel_U/Rel_L/Rel_R")
+            rel = C2_REL_RE.match(line)
+            if rel and not C2_NUMBER_RE.match(rel.group(1).strip()):
+                errors.append(f"строка {number}: подпись связи начинается с номера шага: «1) …»")
     elif kind == "er":
         if "hide circle" not in lines:
             errors.append("нет hide circle")

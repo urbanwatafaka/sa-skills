@@ -13,7 +13,7 @@
 
 | Право | Кому | Где проверяется | Хранение |
 |---|---|---|---|
-| `employees.manage` | Владелец мерчанта | `POST /api/employees`, `lkp-back` | Таблица `prodamus.user_permissions` ‹IM-06› |
+| `employees.manage` | Владелец мерчанта | `POST /api/employees`, `lkp-back` | Таблица `lkp.user_permissions` ‹IM-06› |
 ```
 
 ## Правила

@@ -59,6 +59,20 @@ partners ||--o{ promocodes
 """
 
 
+def test_kafka_arrows_only_from_service():
+    text = '@startuml\nautonumber "<b>[000]"\nparticipant "lkp-back" as back\nqueue "Kafka" as kafka\n' \
+        "back -> kafka: Event\nback --> kafka: Event\nkafka -> back: Event\nkafka [#red]--> back: Event\n@enduml\n"
+    errors = sa_puml.kind_errors("x-sequence.puml", text)
+    assert [e.split(":", 1)[0] for e in errors] == ["строка 7", "строка 8"]
+    assert "стрелка из kafka" in errors[0]
+
+
+def test_c2_relations_numbered():
+    text = '@startuml\nskinparam linetype ortho\nRel_D(a, b, "1) вызов")\nRel_R(b, c, "запрос")\n' \
+        'Rel_U(c, d, " 12) ответ", $tags="read")\n@enduml\n'
+    assert sa_puml.kind_errors("x-c2.puml", text) == ["строка 4: подпись связи начинается с номера шага: «1) …»"]
+
+
 @pytest.mark.parametrize("text", [SEQ, ACTIVITY, ER])
 def test_valid(text):
     assert structural_errors(text) == []

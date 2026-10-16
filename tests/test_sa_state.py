@@ -86,7 +86,7 @@ def test_init_state(tmp_path):
     assert state == load_state(target)
     assert state["task"] == "LKP-1" and state["stage"] == "impact"
     assert state["access"] == {} and state["inputs"] == {} and state["sections"] == {}
-    assert state["plugin_version"] == "0.3.0"
+    assert state["plugin_version"] == "0.3.1"
     with pytest.raises(ArtifactError, match="уже есть"):
         init_state(target, "LKP-1")
 

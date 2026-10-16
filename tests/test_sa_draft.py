@@ -258,6 +258,15 @@ def test_openapi_errors():
     assert openapi_errors("openapi: 3.0.3\n") == ["нет info.title", "нет info.version", "нет paths"]
 
 
+def test_openapi_tag_matches_prefix():
+    bad = GOOD_OPENAPI.replace("      tags: [Internal]", "      tags:\n        - Api")
+    bad = bad.replace("      tags: [Api]", "      tags: [Backoffice]")
+    assert openapi_errors(bad) == [
+        "POST /api/questionnaires: тег Backoffice, а по префиксу пути — Api",
+        "GET /internal/promocodes/{code}/owner: тег Api, а по префиксу пути — Internal",
+    ]
+
+
 def test_dto_errors(task_dir):
     assert dto_errors(task_dir, "SavedEvent") == ["нет файла draft/dto/SavedEvent.json для {{DTO:SavedEvent}}"]
     (task_dir / "draft/dto").mkdir(parents=True)
