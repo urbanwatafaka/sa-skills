@@ -320,3 +320,82 @@ def test_gaps_cli(draft_task, monkeypatch, capsys):
     monkeypatch.setattr(sa_puml, "find_renderer", lambda: None)
     assert main(["gaps", str(draft_task)]) == 0
     assert capsys.readouterr().out.startswith("Обязательные секции: все на месте\n")
+
+
+from sa_draft import is_human, mark, release, row_hashes
+
+
+def _section_line(task_dir, sid):
+    return next(line for line in plan(task_dir).splitlines() if line.startswith(f"{sid} |"))
+
+
+def test_mark_keeps_regenerated_section_from_human_flag(draft_task):
+    path = draft_task / "draft/02-architecture.md"
+    path.write_text("# Архитектура и Процесс\n\nНовый текст ‹R-01›\n", encoding="utf-8")
+    mark(draft_task, ["02-architecture"])
+    assert _section_line(draft_task, "02-architecture").endswith("| есть")
+    entry = load_state(draft_task)["sections"]["02-architecture"]
+    assert entry["generated"] == file_sha1(path) and entry["edited_by_human"] is False
+    assemble(draft_task)
+    assert load_state(draft_task)["sections"]["02-architecture"] == {"hash": file_sha1(path), "edited_by_human": False}
+
+
+def test_assemble_flags_unmarked_edit(draft_task):
+    (draft_task / "draft/03-changes.md").write_text("# Доработки\n\nПравка аналитика ‹R-01›\n", encoding="utf-8")
+    assemble(draft_task)
+    assert load_state(draft_task)["sections"]["03-changes"]["edited_by_human"] is True
+
+
+def test_mark_refuses_human_section_and_release(draft_task):
+    path = draft_task / "draft/03-changes.md"
+    path.write_text("# Доработки\n\nПравка аналитика ‹R-01›\n", encoding="utf-8")
+    plan(draft_task)
+    with pytest.raises(ArtifactError, match="03-changes: правка человека"):
+        mark(draft_task, ["03-changes"])
+    release(draft_task, ["03-changes"])
+    entry = load_state(draft_task)["sections"]["03-changes"]
+    assert entry["edited_by_human"] is False and entry["generated"] == file_sha1(path)
+    assert _section_line(draft_task, "03-changes").endswith("| есть")
+
+
+def test_mark_unknown_or_missing_section(draft_task):
+    with pytest.raises(ArtifactError, match="секции 99-x нет в шаблоне feature"):
+        mark(draft_task, ["99-x"])
+    (draft_task / "draft/06-configs.md").unlink()
+    with pytest.raises(ArtifactError, match="нет файла draft/06-configs.md"):
+        mark(draft_task, ["06-configs"])
+
+
+def test_is_human(tmp_path):
+    path = tmp_path / "s.md"
+    path.write_text("x", encoding="utf-8")
+    sha = file_sha1(path)
+    assert is_human(None, path) is False
+    assert is_human({}, path) is False
+    assert is_human({"hash": sha, "edited_by_human": False}, path) is False
+    assert is_human({"hash": "0" * 40, "generated": sha, "edited_by_human": False}, path) is False
+    assert is_human({"hash": "0" * 40, "edited_by_human": False}, path) is True
+    assert is_human({"hash": sha, "edited_by_human": True}, path) is True
+
+
+def test_assemble_records_row_hashes(draft_task):
+    rows = load_state(draft_task)["rows"]
+    assert sorted(rows) == ["D-01", "IM-01", "IM-02", "IM-03", "IM-04", "R-01", "R-02", "R-03"]
+    assert rows == row_hashes(draft_task)
+    brd = draft_task / "sources/BRD.md"
+    brd.write_text(brd.read_text(encoding="utf-8").replace("Мерчант видит причину", "Мерчант видит текст причины"), encoding="utf-8")
+    changed = row_hashes(draft_task)
+    assert [key for key in rows if rows[key] != changed[key]] == ["R-02"]
+
+
+def test_assemble_rejects_bad_author(task_dir):
+    write_sections(task_dir)
+    with pytest.raises(ArtifactError, match="автор: без переводов строки и символа"):
+        assemble(task_dir, author="Иван | Петров")
+
+
+def test_cli_mark_release(draft_task, capsys):
+    assert main(["mark", str(draft_task), "02-architecture", "03-changes"]) == 0
+    assert "отмечены: 02-architecture, 03-changes" in capsys.readouterr().out
+    assert main(["release", str(draft_task), "02-architecture"]) == 0
+    assert main(["mark", str(draft_task)]) == 2

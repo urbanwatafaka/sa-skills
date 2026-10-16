@@ -1,4 +1,4 @@
-"""Следующий свободный ID в задаче: R, IM, Q-PO, Q-SA, D."""
+"""Следующий свободный ID в задаче: R, IM, Q-PO, Q-SA, D, RV."""
 from __future__ import annotations
 
 import re
@@ -8,7 +8,7 @@ from pathlib import Path
 from sa_artifacts import ArtifactError
 from sa_state import ARTIFACTS
 
-KINDS = {"R": "BRD", "IM": "impact-map", "Q-PO": "questions", "Q-SA": "questions", "D": "decisions"}
+KINDS = {"R": "BRD", "IM": "impact-map", "Q-PO": "questions", "Q-SA": "questions", "D": "decisions", "RV": "review"}
 
 
 def next_ids(task_dir: Path, kind: str, count: int = 1) -> list[str]:
@@ -23,7 +23,7 @@ def next_ids(task_dir: Path, kind: str, count: int = 1) -> list[str]:
     return [f"{kind}-{n:02d}" for n in range(start, start + count)]
 
 
-USAGE = "использование: sa_ids.py next <папка задачи> <вид: R|IM|Q-PO|Q-SA|D> [количество]"
+USAGE = "использование: sa_ids.py next <папка задачи> <вид: R|IM|Q-PO|Q-SA|D|RV> [количество]"
 
 
 def main(argv: list[str]) -> int:

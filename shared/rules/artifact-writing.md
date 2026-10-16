@@ -1,6 +1,6 @@
 # Правила записи артефактов
 
-Общие для `/tdd-impact`, `/tdd-start`, `/tdd-clarify`, `/tdd-draft`. Правила маршрутизации — в `question-routing.md`.
+Общие для `/tdd-impact`, `/tdd-start`, `/tdd-clarify`, `/tdd-draft`, `/tdd-check`, `/tdd-update`. Правила маршрутизации — в `question-routing.md`.
 
 ## Пути
 

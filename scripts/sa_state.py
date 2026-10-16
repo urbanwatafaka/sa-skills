@@ -26,6 +26,7 @@ ARTIFACTS = {
     "draft": "draft.md",
     "review": "review.md",
 }
+PUBLISH_FILE = "draft-publish.md"
 
 
 def artifact_path(task_dir: Path, name: str) -> Path:
@@ -51,16 +52,19 @@ def load_state(task_dir: Path) -> dict:
     return data
 
 
-def save_state(task_dir: Path, state: dict) -> None:
-    text = json.dumps(state, ensure_ascii=False, indent=2) + "\n"
-    fd, tmp = tempfile.mkstemp(prefix=".state-", suffix=".tmp", dir=task_dir)
+def write_atomic(path: Path, text: str) -> None:
+    fd, tmp = tempfile.mkstemp(prefix=f".{path.name}-", suffix=".tmp", dir=path.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(text)
-        os.replace(tmp, task_dir / STATE_FILE)
+        os.replace(tmp, path)
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise
+
+
+def save_state(task_dir: Path, state: dict) -> None:
+    write_atomic(task_dir / STATE_FILE, json.dumps(state, ensure_ascii=False, indent=2) + "\n")
 
 
 def _plugin_version() -> str:
@@ -96,6 +100,20 @@ def set_value(task_dir: Path, key: str, value: str) -> dict:
         if not TEMPLATE_RE.fullmatch(value):
             raise ArtifactError("template: формат имя@мажор.минор, например feature@1.0")
         state["template"] = value
+    elif key == "published":
+        publish = task_dir / PUBLISH_FILE
+        if not value.strip():
+            raise ArtifactError("published: нужна ссылка на страницу")
+        if not publish.exists():
+            raise ArtifactError(f"нет {PUBLISH_FILE} — сначала sa_draft.py assemble")
+        state["published"] = {"url": value, "hash": file_sha1(publish)}
+    elif key == "published.version":
+        published = state.get("published")
+        if not isinstance(published, dict):
+            raise ArtifactError("published.version: сначала set published <ссылка>")
+        if not (value.isascii() and value.isdigit() and int(value) > 0):
+            raise ArtifactError("published.version: целое число больше нуля — версия страницы в Confluence")
+        published["version"] = int(value)
     elif key.startswith("access.") and key[len("access."):] in ACCESS_KEYS:
         if value not in ACCESS_MODES:
             raise ArtifactError(f"{key}: режим одно из {', '.join(sorted(ACCESS_MODES))}")
@@ -105,7 +123,7 @@ def set_value(task_dir: Path, key: str, value: str) -> dict:
         access[key[len("access."):]] = value
     else:
         raise ArtifactError(
-            f"ключ {key} менять нельзя; допустимы: stage, template, "
+            f"ключ {key} менять нельзя; допустимы: stage, template, published, published.version, "
             + ", ".join(f"access.{k}" for k in sorted(ACCESS_KEYS))
         )
     save_state(task_dir, state)
@@ -141,7 +159,7 @@ def stale_inputs(task_dir: Path, state: dict) -> list[str]:
 USAGE = (
     "использование:\n"
     "  sa_state.py init <папка задачи> <KEY>\n"
-    "  sa_state.py set <папка задачи> <ключ> <значение>\n"
+    "  sa_state.py set <папка задачи> <ключ> <значение>   # stage, template, published, published.version, access.<система>\n"
     "  sa_state.py record <папка задачи> <артефакт>..."
 )
 

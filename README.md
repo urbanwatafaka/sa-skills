@@ -25,9 +25,9 @@
 | `/tdd-clarify` | Вопросы PO и аналитику, журнал решений | готово |
 | `/tdd-draft` | Черновик ТЗ на доработку по канону типа 1 (шаблон `feature@2.0`), самопроверка, публикация в Confluence | готово |
 | `puml-c2`, `puml-sequence`, `puml-activity`, `puml-er`, `puml-state` | Диаграммы PlantUML для ТЗ, вызываются из `/tdd-draft` или сами | готово |
-| `/tdd-check` | Независимое ревью черновика | подпроект 4 |
-| `/tdd-update` | Точечное обновление черновика | подпроект 4 |
-| `/sa-index-docs` | Индекс `/docs` по коду сервисов | подпроект 5 |
+| `/tdd-check [KEY] [--code]` | Независимое ревью черновика: review.md, матрица покрытия | готово |
+| `/tdd-update [KEY] [RV-xx…]` | Точечное обновление черновика по решениям и замечаниям | готово |
+| `/sa-index-docs [сервис\|all] [--full]` | Индекс `docs/` по коду сервисов и глобальный индекс системы | готово |
 
 Артефакты задачи лежат в `tasks/<KEY>/` рабочей папки. Форматы — `shared/schemas/artifacts.md`.
 
@@ -83,6 +83,31 @@ claude --plugin-dir $REPO --allowedTools "Bash(python3:*) Read Write Edit Grep G
 python3 $REPO/scripts/sa_validate.py tasks/LKP-DEMO
 python3 $REPO/scripts/sa_draft.py gaps tasks/LKP-DEMO
 ```
+
+Ревью и обновление по задаче с подложенными дефектами (`tests/fixtures/e2e/lkp-review/make_task.py` — список дефектов в его плане):
+
+```bash
+python3 $REPO/tests/fixtures/e2e/lkp-review/make_task.py /tmp/sa-e2e/tasks
+claude --plugin-dir $REPO --allowedTools "Bash(python3:*) Read Write Edit Grep Glob Agent" \
+  -p "/tdd-check LKP-REVIEW --code"
+claude --plugin-dir $REPO --allowedTools "Bash(python3:*) Read Write Edit Grep Glob Agent" \
+  -p "/tdd-update LKP-REVIEW все"
+claude --plugin-dir $REPO --allowedTools "Bash(python3:*) Read Write Edit Grep Glob Agent" \
+  -p "/tdd-check LKP-REVIEW"
+python3 $REPO/scripts/sa_validate.py tasks/LKP-REVIEW
+```
+
+### /sa-index-docs
+
+```bash
+python3 <repo>/tests/fixtures/e2e/index-repos/make_repos.py /tmp/sa-e2e-index/repos
+cd /tmp/sa-e2e-index
+SA_REPOS_ROOT=/tmp/sa-e2e-index/repos claude --plugin-dir <repo> --model sonnet --allowedTools "Bash(python3:*) Read Write Edit Grep Glob Agent" -p "/sa-index-docs all"
+python3 <repo>/tests/fixtures/e2e/index-repos/make_repos.py /tmp/sa-e2e-index/repos --change
+SA_REPOS_ROOT=/tmp/sa-e2e-index/repos claude --plugin-dir <repo> --model sonnet --allowedTools "Bash(python3:*) Read Write Edit Grep Glob Agent" -p "/sa-index-docs shop-api"
+```
+
+Ожидается: после первого запуска `sa_index.py check` даёт `OK` для трёх сервисов, в `repos/system-docs/docs/system_tech.md` есть `POST /api/orders` с потребителем `shop-front` и `Kafka: orders.created` с `shop-legacy`; второй запуск идёт в режиме `incremental` и добавляет в `shop-api/docs/tech.md` строку `DELETE /api/orders/{id}`.
 
 Синтаксис диаграмм проверяется через `plantuml` в PATH или Docker-образ `plantuml/plantuml` (`docker pull plantuml/plantuml`); без них — только структура.
 

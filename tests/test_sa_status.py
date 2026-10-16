@@ -81,3 +81,44 @@ def test_cli(task_dir, tmp_path, capsys):
     assert capsys.readouterr().out.strip() == EXPECTED_DEMO
     assert main([str(tmp_path / "nope")]) == 1
     assert main([]) == 2
+
+
+def test_review_status_and_next_step(draft_task):
+    from conftest import write_review
+    from sa_review import set_status
+    from sa_state import set_value
+
+    set_value(draft_task, "stage", "check")
+    write_review(draft_task, ["| RV-01 | критично | 12-acceptance | x | R-03 | y | открыто |"])
+    status = build_status(draft_task)
+    assert "Ревью: открыто 1 (критично 1), принято 0" in status
+    assert status.endswith("Следующий шаг: разобрать замечания review.md: /tdd-update <RV-xx…> — принять, «/tdd-update отклонить RV-xx» — отклонить")
+    set_status(draft_task, "принято", ["RV-01"])
+    assert build_status(draft_task).endswith("Следующий шаг: /tdd-update — внести принятые замечания, затем /tdd-check")
+    set_status(draft_task, "отклонено", ["RV-01"])
+    assert build_status(draft_task).endswith("Следующий шаг: замечаний нет — завершить: sa_state.py set <папка задачи> stage done")
+
+
+def test_review_stale_status(draft_task):
+    from conftest import write_review
+    from sa_draft import assemble, mark
+    from sa_state import set_value
+
+    set_value(draft_task, "stage", "check")
+    write_review(draft_task, [])
+    (draft_task / "draft/02-architecture.md").write_text("# Архитектура и Процесс\n\nДругое ‹R-01›\n", encoding="utf-8")
+    mark(draft_task, ["02-architecture"])
+    assemble(draft_task)
+    status = build_status(draft_task)
+    assert "Ревью: открыто 0 (критично 0), принято 0 · устарело — черновик менялся после ревью" in status
+    assert status.endswith("Следующий шаг: /tdd-check — черновик менялся после ревью")
+
+
+def test_broken_review_does_not_fail_status(draft_task):
+    from sa_state import set_value
+
+    set_value(draft_task, "stage", "check")
+    (draft_task / "review.md").write_text("---\ndraft: x\nreviewed: 2026-10-16\nround: 1\n---\n# Ревью\n\nпусто\n", encoding="utf-8")
+    status = build_status(draft_task)
+    assert "Ревью: review.md повреждён — перепишет /tdd-check" in status
+    assert status.endswith("Следующий шаг: /tdd-check — review.md повреждён, его перепишет /tdd-check")

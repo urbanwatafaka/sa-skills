@@ -22,7 +22,7 @@ def _frontmatter(text: str) -> dict[str, str]:
 def test_plugin_manifest():
     data = json.loads((ROOT / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))
     assert data["name"] == "sa-skills"
-    assert data["version"] == "0.3.1"
+    assert data["version"] == "0.4.0"
     assert data["description"]
 
 
@@ -71,3 +71,37 @@ def test_no_shell_variables_in_prompts():
     assert files
     found = [f"{f.relative_to(ROOT)}: {m.group(0)}" for f in files for m in pattern.finditer(f.read_text(encoding="utf-8"))]
     assert not found, found
+
+
+def test_tdd_reviewer_contract():
+    from sa_review import SEVERITIES, WHOLE
+
+    text = (ROOT / "agents/tdd-reviewer.md").read_text(encoding="utf-8")
+    meta = _frontmatter(text)
+    assert meta["model"] == "sonnet"
+    assert set(t.strip() for t in meta["tools"].split(",")) == {"Read", "Grep", "Glob"}
+    for value in (*SEVERITIES, *WHOLE, "закрыто", "остаётся"):
+        assert f"`{value}`" in text, value
+    for fragment in ("| Важность | Где | Проблема | ← Ссылка | Предложение |", "| RV | Вердикт |", "## Чек-лист", "целевое поведение"):
+        assert fragment in text, fragment
+
+
+def test_source_reader_verification_mode():
+    text = (ROOT / "agents/source-reader.md").read_text(encoding="utf-8")
+    assert "\n## Режим сверки\n" in text
+    assert "| Утверждение | Вердикт | Источник |" in text
+    for value in ("подтверждено", "опровергнуто", "не найдено"):
+        assert f"`{value}`" in text, value
+
+
+def test_docs_indexer_contract():
+    from sa_index import SCHEMAS
+
+    text = (ROOT / "agents/docs-indexer.md").read_text(encoding="utf-8")
+    meta = _frontmatter(text)
+    assert meta["model"] == "sonnet"
+    assert set(t.strip() for t in meta["tools"].split(",")) == {"Read", "Grep", "Glob", "Write", "Edit", "Bash"}
+    for fragment in ("sa_index.py check", "<плагин>/shared/index/docs-schema.md", "<плагин>/shared/index/stack-hints.md", "`?`", "## Инкрементальный режим", "## Что вернуть"):
+        assert fragment in text, fragment
+    for name in SCHEMAS:
+        assert name in text, name

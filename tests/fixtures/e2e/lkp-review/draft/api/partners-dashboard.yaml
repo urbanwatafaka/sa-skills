@@ -1,0 +1,18 @@
+openapi: 3.0.3
+info:
+  title: Partners.Dashboard.Api
+  version: 1.0.0
+paths:
+  /internal/promocodes/{code}/owner:
+    get:
+      tags: [Internal]
+      summary: Владелец промокода
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: ИНН владельца промокода

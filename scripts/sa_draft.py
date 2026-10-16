@@ -1,6 +1,7 @@
 """Черновик ТЗ: план секций, сборка draft.md, отчёт о пробелах."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -10,7 +11,7 @@ from pathlib import Path
 
 import sa_puml
 from sa_artifacts import ArtifactError, find_refs, find_table, parse_questions, parse_tables, split_frontmatter
-from sa_state import ARTIFACTS, file_sha1, load_state, save_state
+from sa_state import ARTIFACTS, PUBLISH_FILE, file_sha1, load_state, save_state, write_atomic
 from sa_template import Manifest, Section, load_manifest
 
 TRACE_RE = re.compile(r"‹([^›]*)›")
@@ -31,9 +32,13 @@ OPEN_QUESTIONS = "# Открытые вопросы"
 HEADER_KEYS = ("status", "author", "jira", "template", "assembled")
 DEFAULT_JIRA_BASE = "https://jira.tasktracker.help"
 APPROVALS = {"бизнес": "Бизнес", "архком": "Архитектурный комитет"}
-PUBLISH_FILE = "draft-publish.md"
 DEFAULT_TASK_STATUS = "в аналитике"
 NO_LINK = "Не требуется"
+ROW_SOURCES = (
+    ("BRD", ["ID", "Требование", "Тип"]),
+    ("impact-map", ["ID", "Объект", "Вид", "Влияние", "← R"]),
+    ("decisions", ["ID", "← Q", "Решение"]),
+)
 _CONTEXT_COLUMNS = ["← IM", "Скоуп", "Комментарий"]
 _IN_SCOPE = ("в скоупе", "")
 
@@ -63,6 +68,65 @@ def section_path(task_dir: Path, section_id: str) -> Path:
 
 def present_sections(task_dir: Path, manifest: Manifest) -> list[Section]:
     return [s for s in manifest.sections if section_path(task_dir, s.id).exists()]
+
+
+def _entries(state: dict) -> dict:
+    sections = state.get("sections")
+    return sections if isinstance(sections, dict) else {}
+
+
+def is_human(entry: dict | None, path: Path) -> bool:
+    """Секция правлена человеком: стоит отметка или файл не совпадает ни со сборкой, ни с последней записью плагина."""
+    if not isinstance(entry, dict):
+        return False
+    if entry.get("edited_by_human"):
+        return True
+    known = {entry.get("hash"), entry.get("generated")} - {None}
+    return bool(known) and file_sha1(path) not in known
+
+
+def _claim(task_dir: Path, section_ids: list[str], force: bool) -> None:
+    state = load_state(task_dir)
+    manifest = task_manifest(state)
+    names = {s.id for s in manifest.sections}
+    sections = _entries(state)
+    for sid in section_ids:
+        if sid not in names:
+            raise ArtifactError(f"секции {sid} нет в шаблоне {manifest.name}")
+        path = section_path(task_dir, sid)
+        if not path.exists():
+            raise ArtifactError(f"нет файла draft/{sid}.md")
+        entry = sections.get(sid) if isinstance(sections.get(sid), dict) else {}
+        if entry.get("edited_by_human") and not force:
+            raise ArtifactError(
+                f"{sid}: правка человека — не перезаписывай; снять отметку можно только по слову аналитика: "
+                f"sa_draft.py release <папка задачи> {sid}"
+            )
+        sha = file_sha1(path)
+        sections[sid] = {"hash": entry.get("hash", sha), "edited_by_human": False, "generated": sha}
+    state["sections"] = sections
+    save_state(task_dir, state)
+
+
+def mark(task_dir: Path, section_ids: list[str]) -> None:
+    """Секцию записал плагин — не считать её правкой человека."""
+    _claim(task_dir, section_ids, force=False)
+
+
+def release(task_dir: Path, section_ids: list[str]) -> None:
+    """Снять отметку правки человека — только по слову аналитика."""
+    _claim(task_dir, section_ids, force=True)
+
+
+def section_texts(task_dir: Path, manifest: Manifest) -> dict[str, str]:
+    return {
+        s.id: section_path(task_dir, s.id).read_text(encoding="utf-8")
+        for s in manifest.sections if section_path(task_dir, s.id).exists()
+    }
+
+
+def block_section(manifest: Manifest, block: str) -> str | None:
+    return next((s.id for s in manifest.sections if s.block == block), None)
 
 
 def context_meta(task_dir: Path) -> dict:
@@ -207,6 +271,14 @@ def open_questions(task_dir: Path, publish: bool = False) -> str:
     return OPEN_QUESTIONS + "\n\n" + "\n".join(items)
 
 
+def without_open_questions(text: str) -> str:
+    """Тело черновика без раздела «Открытые вопросы»: его собирают из questions.md, и ответы в /tdd-clarify
+    не должны делать черновик устаревшим."""
+    marker = "\n" + OPEN_QUESTIONS + "\n"
+    head, found, _ = text.partition(marker)
+    return head if found else text
+
+
 def render_body(task_dir: Path, manifest: Manifest, task: str, publish: bool = False) -> str:
     parts = [f"# {doc_title(task_dir, manifest, task)}"]
     for section in present_sections(task_dir, manifest):
@@ -255,6 +327,8 @@ def assemble(task_dir: Path, author: str | None = None, today: date | None = Non
         author = split_frontmatter(draft.read_text(encoding="utf-8"))[0].get("author")
     if not author:
         raise ArtifactError("укажи автора: sa_draft.py assemble <папка задачи> <автор>")
+    if any(ch in author for ch in "\n\r|"):
+        raise ArtifactError("автор: без переводов строки и символа |")
     task = str(state.get("task", ""))
     meta = {
         "status": "черновик",
@@ -267,21 +341,19 @@ def assemble(task_dir: Path, author: str | None = None, today: date | None = Non
     body = render_body(task_dir, manifest, task)
     title, rest = render_body(task_dir, manifest, task, publish=True).split("\n\n", 1)
     statuses = statuses_table(task_dir, task, author)
-    draft.write_text(header + body, encoding="utf-8")
+    write_atomic(draft, header + body)
     publish = task_dir / PUBLISH_FILE
-    publish.write_text(
+    write_atomic(
+        publish,
         f"{title}\n\n:::expand Оглавление\n{{{{toc}}}}\n:::\n\n---\n\n**Статусы**\n\n{statuses}\n\n---\n\n{rest}",
-        encoding="utf-8",
     )
-    prior_sections = state.get("sections") if isinstance(state.get("sections"), dict) else {}
+    prior = _entries(state)
     sections = {}
     for s in present_sections(task_dir, manifest):
-        prior = prior_sections.get(s.id) if isinstance(prior_sections.get(s.id), dict) else {}
-        sections[s.id] = {
-            "hash": file_sha1(section_path(task_dir, s.id)),
-            "edited_by_human": bool(prior.get("edited_by_human", False)),
-        }
+        path = section_path(task_dir, s.id)
+        sections[s.id] = {"hash": file_sha1(path), "edited_by_human": is_human(prior.get(s.id), path)}
     state["sections"] = sections
+    state["rows"] = row_hashes(task_dir)
     save_state(task_dir, state)
     return [draft, publish]
 
@@ -311,12 +383,29 @@ def task_data(task_dir: Path) -> dict:
     }
 
 
-def _scope(data: dict, im_id: str) -> str:
+def row_hashes(task_dir: Path) -> dict[str, str]:
+    """Снимок строк BRD, карты и решений на момент сборки: по нему /tdd-update видит, что изменилось."""
+    hashes: dict[str, str] = {}
+    for name, columns in ROW_SOURCES:
+        for row in _rows(_body(task_dir, name), columns):
+            text = " | ".join(row[column] for column in columns)
+            hashes[row["ID"]] = hashlib.sha1(text.encode("utf-8")).hexdigest()
+    return hashes
+
+
+def scope_of(data: dict, im_id: str) -> str:
     return data["scope"].get(im_id, ("в скоупе", ""))[0]
 
 
+def untraced_impacts(data: dict, traced: set[str], scopes: tuple[str, ...] = ("в скоупе",)) -> list[str]:
+    return [
+        row["ID"] for row in data["impact"]
+        if row["Влияние"] in ("новый", "изм.") and scope_of(data, row["ID"]) in scopes and row["ID"] not in traced
+    ]
+
+
 def _slice(section: Section, data: dict) -> tuple[list[str], list[str], list[str]]:
-    rows = [row for row in data["impact"] if _scope(data, row["ID"]) != "вне скоупа"]
+    rows = [row for row in data["impact"] if scope_of(data, row["ID"]) != "вне скоупа"]
     if section.im_kinds:
         rows = [row for row in rows if row["Вид"] in section.im_kinds]
         linked = {r for row in rows for r in find_refs(row["← R"]) if r.startswith("R-")}
@@ -342,7 +431,7 @@ def plan(task_dir: Path) -> str:
     state = load_state(task_dir)
     manifest = task_manifest(state)
     data = task_data(task_dir)
-    sections = state.get("sections") if isinstance(state.get("sections"), dict) else {}
+    sections = _entries(state)
     lines = [f"Шаблон: {manifest.name}@{manifest.version} — {manifest.title}"]
     if state["template"] != f"{manifest.name}@{manifest.version}":
         lines.append(f"ВНИМАНИЕ: в state.json {state['template']}, а манифест {manifest.name}@{manifest.version}")
@@ -352,7 +441,7 @@ def plan(task_dir: Path) -> str:
         entry = sections.get(s.id) if isinstance(sections.get(s.id), dict) else None
         if not path.exists():
             status = "нет" if s.required else "нет — без содержания не создаётся"
-        elif entry and (entry.get("edited_by_human") or (entry.get("hash") and file_sha1(path) != entry["hash"])):
+        elif is_human(entry, path):
             if not entry.get("edited_by_human"):
                 entry["edited_by_human"] = True
                 changed = True
@@ -378,10 +467,7 @@ def gaps(task_dir: Path) -> str:
     state = load_state(task_dir)
     manifest = task_manifest(state)
     data = task_data(task_dir)
-    texts = {
-        s.id: section_path(task_dir, s.id).read_text(encoding="utf-8")
-        for s in manifest.sections if section_path(task_dir, s.id).exists()
-    }
+    texts = section_texts(task_dir, manifest)
     missing = [s.id for s in manifest.sections if s.required and s.id not in texts]
     skipped = [s.id for s in manifest.sections if not s.required and s.id not in texts]
     lines = [f"Нет обязательных секций: {', '.join(missing)}" if missing else "Обязательные секции: все на месте"]
@@ -405,10 +491,7 @@ def gaps(task_dir: Path) -> str:
     lines.append(f"Нерешённый скоуп: {_fmt_none(unresolved)}")
     traced = {ref for text in texts.values() for ref in trace_refs(text)}
     lines.append(f"R без трассировки: {_fmt_none([r for r in data['brd'] if r not in traced])}")
-    untraced = [
-        row["ID"] for row in data["impact"]
-        if row["Влияние"] in ("новый", "изм.") and _scope(data, row["ID"]) == "в скоупе" and row["ID"] not in traced
-    ]
+    untraced = untraced_impacts(data, traced)
     lines.append(f"IM (новый/изм., в скоупе) без трассировки: {_fmt_none(untraced)}")
     lines.append(f"Заглушки вместо содержания: {_fmt_none([sid for sid, text in texts.items() if stubs(text)])}")
     diagrams_dir = task_dir / "draft" / "diagrams"
@@ -426,9 +509,11 @@ USAGE = (
     "использование:\n"
     "  sa_draft.py plan <папка задачи>\n"
     "  sa_draft.py assemble <папка задачи> [автор]\n"
-    "  sa_draft.py gaps <папка задачи>"
+    "  sa_draft.py gaps <папка задачи>\n"
+    "  sa_draft.py mark <папка задачи> <секция>...\n"
+    "  sa_draft.py release <папка задачи> <секция>..."
 )
-ARITY = {"plan": (2, 2), "assemble": (2, 3), "gaps": (2, 2)}
+ARITY = {"plan": (2, 2), "assemble": (2, 3), "gaps": (2, 2), "mark": (3, 99), "release": (3, 99)}
 
 
 def main(argv: list[str]) -> int:
@@ -443,6 +528,12 @@ def main(argv: list[str]) -> int:
         elif command == "assemble":
             paths = assemble(task_dir, argv[2] if len(argv) == 3 else None)
             print("собраны: " + ", ".join(p.name for p in paths))
+        elif command == "mark":
+            mark(task_dir, argv[2:])
+            print("отмечены: " + ", ".join(argv[2:]))
+        elif command == "release":
+            release(task_dir, argv[2:])
+            print("сняты отметки правки человека: " + ", ".join(argv[2:]))
         else:
             print(gaps(task_dir))
     except ArtifactError as exc:

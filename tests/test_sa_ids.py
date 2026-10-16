@@ -44,3 +44,10 @@ def test_cli(task_dir, capsys):
     assert main(["next", str(task_dir), "R", "abc"]) == 2
     assert main(["next", str(task_dir), "R", "²"]) == 2
     assert main([]) == 2
+
+
+def test_review_ids(draft_task):
+    from conftest import write_review
+
+    write_review(draft_task, ["| RV-01 | совет | шапка | x | — | y | открыто |", "| RV-02 | совет | шапка | x | — | y | открыто |"])
+    assert next_ids(draft_task, "RV", 2) == ["RV-03", "RV-04"]

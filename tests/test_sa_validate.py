@@ -404,3 +404,123 @@ def test_draft_without_template(draft_task):
     (draft_task / "state.json").write_text(json.dumps(state), encoding="utf-8")
     errors = validate_task(draft_task)
     assert "draft: в state.json нет template — сначала /tdd-start" in errors
+
+
+def test_state_rows_and_generated():
+    base = {"task": "X", "stage": "draft", "plugin_version": "0.1.0"}
+    good = {**base, "rows": {"R-01": "a" * 40}, "sections": {"05-api": {"hash": "b" * 40, "edited_by_human": False, "generated": "c" * 40}}}
+    assert validate_state(good) == []
+    bad = {**base, "rows": {"X-1": "nope"}, "sections": {"05-api": {"hash": "b" * 40, "edited_by_human": False, "generated": "x"}}}
+    errors = validate_state(bad)
+    assert "rows: «X-1» — не R-xx, IM-xx или D-xx" in errors
+    assert "rows.X-1: ожидается sha1" in errors
+    assert "sections.05-api.generated: ожидается sha1" in errors
+    assert "rows: ожидается объект" in validate_state({**base, "rows": []})
+
+
+from conftest import write_review
+
+REVIEW_ROW = "| RV-01 | критично | 01-brd | R-03 не покрыт | R-03 | добавить критерий | открыто |"
+
+
+def test_review_valid(draft_task):
+    write_review(draft_task, [REVIEW_ROW, "| RV-02 | совет | шапка | Нет релиза | — | указать | принято |"])
+    assert validate_task(draft_task) == []
+
+
+def test_review_row_rules(draft_task):
+    write_review(draft_task, ["| RV-1 | срочно | 99-x | — | R-09, foo | x | новое |"])
+    errors = validate_task(draft_task)
+    for expected in (
+        "review.md: RV-1: ID должен быть вида RV-01",
+        "review.md: RV-1: важность «срочно» не из списка: важно, критично, совет",
+        "review.md: RV-1: где «99-x» — id секции шаблона, шапка или весь черновик",
+        "review.md: RV-1: пустая проблема",
+        "review.md: RV-1: «foo» в ← Ссылка — не ID",
+        "review.md: RV-1: ссылка на несуществующий R-09",
+        "review.md: RV-1: статус «новое» не из списка: закрыто, отклонено, открыто, принято",
+    ):
+        assert expected in errors, expected
+
+
+def test_review_header(draft_task):
+    path = write_review(draft_task, [REVIEW_ROW])
+    _edit(path, "round: 1", "round: 0")
+    _edit(path, "reviewed: 2026-10-16", "reviewed: вчера")
+    text = path.read_text(encoding="utf-8")
+    path.write_text(text.replace(text.split("draft: ", 1)[1].split("\n", 1)[0], "abc", 1), encoding="utf-8")
+    errors = validate_task(draft_task)
+    assert "review.md: draft: sha1 draft.md, по которому делалось ревью" in errors
+    assert "review.md: reviewed должен быть в формате ГГГГ-ММ-ДД" in errors
+    assert "review.md: round: целое число ≥ 1" in errors
+
+
+def test_review_coverage(draft_task):
+    path = write_review(draft_task, [REVIEW_ROW])
+    _edit(path, "| R-03 | — | — |", "| R-03 | 03-changes | — |")
+    assert "review.md: матрица покрытия не совпадает с черновиком — вставь вывод sa_review.py coverage" in validate_task(draft_task)
+    _edit(path, "| R-03 | 03-changes | — |\n", "")
+    assert "review.md: R-03: нет в матрице покрытия" in validate_task(draft_task)
+    _edit(path, "## Покрытие BRD", "## Прочее")
+    _edit(path, "| R | Секции | Истории |", "| X | Y | Z |")
+    assert "review.md: нет таблицы покрытия с колонками R, Секции, Истории" in validate_task(draft_task)
+
+
+def test_review_stale_skips_coverage_compare(draft_task):
+    from sa_draft import assemble, mark
+
+    path = write_review(draft_task, [REVIEW_ROW])
+    _edit(path, "| R-03 | — | — |", "| R-03 | 03-changes | — |")
+    (draft_task / "draft/02-architecture.md").write_text("# Архитектура и Процесс\n\nДругое ‹R-01›\n", encoding="utf-8")
+    mark(draft_task, ["02-architecture"])
+    assemble(draft_task)
+    assert validate_task(draft_task) == []
+
+
+def test_stage_check_needs_review(draft_task):
+    from sa_state import set_value
+
+    set_value(draft_task, "stage", "check")
+    assert "review.md: нет файла — запусти /tdd-check" in validate_task(draft_task)
+
+
+def test_state_published():
+    base = {"task": "X", "stage": "draft", "plugin_version": "0.1.0"}
+    assert validate_state({**base, "published": {"url": "https://w/1", "hash": "a" * 40}}) == []
+    errors = validate_state({**base, "published": {"url": "", "hash": "x"}})
+    assert "published.url: непустая ссылка на страницу" in errors
+    assert "published.hash: ожидается sha1" in errors
+    assert validate_state({**base, "published": {"url": "https://w/1", "hash": "a" * 40, "version": 3}}) == []
+    errors = validate_state({**base, "published": {"url": "https://w/1", "hash": "a" * 40, "version": "3"}})
+    assert errors == ["published.version: целое число больше нуля"]
+
+
+def test_answer_in_clarify_does_not_stale_draft(draft_task):
+    questions = draft_task / "questions.md"
+    questions.write_text(questions.read_text(encoding="utf-8").replace("— *open, blocking*", "— *answered*"), encoding="utf-8")
+    assert validate_task(draft_task) == []
+    (draft_task / "draft/02-architecture.md").write_text("# Архитектура и Процесс\n\nДругое ‹R-01›\n", encoding="utf-8")
+    assert any("устарел" in e for e in validate_task(draft_task))
+
+
+def test_stale_review_does_not_require_new_requirements(draft_task):
+    from sa_draft import assemble, mark
+
+    path = write_review(draft_task, [REVIEW_ROW])
+    _edit(path, "| R-03 | — | — |\n", "")
+    assert "review.md: R-03: нет в матрице покрытия" in validate_task(draft_task)
+    (draft_task / "draft/02-architecture.md").write_text("# Архитектура и Процесс\n\nДругое ‹R-01›\n", encoding="utf-8")
+    mark(draft_task, ["02-architecture"])
+    assemble(draft_task)
+    assert validate_task(draft_task) == []
+
+
+def test_review_dangling_ref_only_checked_for_open(draft_task):
+    write_review(draft_task, [
+        "| RV-01 | важно | шапка | старое | R-09 | x | закрыто |",
+        "| RV-02 | важно | шапка | старое | IM-99 | x | отклонено |",
+        "| RV-03 | важно | шапка | старое | D-99 | x | принято |",
+    ])
+    assert validate_task(draft_task) == []
+    write_review(draft_task, ["| RV-01 | важно | шапка | старое | R-09 | x | открыто |"])
+    assert "review.md: RV-01: ссылка на несуществующий R-09" in validate_task(draft_task)

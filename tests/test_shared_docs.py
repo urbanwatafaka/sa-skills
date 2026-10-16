@@ -14,7 +14,7 @@ REQUIRED_HEADINGS = {
     "shared/rules/brd-checklist.md": ["## Обязательные пункты", "## Желательные пункты", "## Как принимать решение"],
     "shared/rules/artifact-writing.md": ["## Пути", "## Вопросы", "## Ссылки", "## ID", "## Таблицы", "## Повторный запуск"],
     "shared/access/adapters.md": ["## Порядок выбора", "## Jira", "## Confluence", "## Git", "## Ручной режим", "## Запись выбора"],
-    "shared/schemas/artifacts.md": ["## Общие правила", "## sources/BRD.md", "## impact-map.md", "## context.md", "## questions.md", "## draft/ и draft.md", "## decisions.md", "## state.json", "## Проверка"],
+    "shared/schemas/artifacts.md": ["## Общие правила", "## sources/BRD.md", "## impact-map.md", "## context.md", "## questions.md", "## draft/ и draft.md", "## review.md", "## decisions.md", "## state.json", "## Проверка"],
 }
 
 
@@ -71,3 +71,43 @@ def test_block_has_headings(name):
         assert f"\n{heading}\n" in text, f"{name}: нет заголовка {heading}"
     checklist = text.split("\n## Чек-лист\n", 1)[1]
     assert checklist.count("- [ ]") >= 3, f"{name}: в чек-листе меньше трёх пунктов"
+
+
+def test_schema_doc_describes_review():
+    from sa_review import COVERAGE_COLUMNS, REVIEW_COLUMNS, SEVERITIES, STATUSES
+
+    text = (ROOT / "shared/schemas/artifacts.md").read_text(encoding="utf-8")
+    for column in REVIEW_COLUMNS + COVERAGE_COLUMNS:
+        assert f"| {column} |" in text, f"колонка {column} не описана"
+    for value in SEVERITIES + STATUSES:
+        assert f"`{value}`" in text, f"значение {value} не описано"
+
+
+def test_index_schema_doc_matches_sa_index():
+    from sa_index import DIRECTIONS, SCHEMAS, STAMP_FILE
+    from sa_index_aggregate import GLOBAL_FILES
+
+    text = (ROOT / "shared/index/docs-schema.md").read_text(encoding="utf-8")
+    for heading in ("## Общие правила", "## tech.md", "## DB.md", "## bctc.md", "## .sa-index.json", "## Глобальные файлы"):
+        assert f"\n{heading}\n" in text, heading
+    for name, sections in SCHEMAS.items():
+        for section, columns in sections.items():
+            assert f"`## {section}`" in text, section
+            assert f"| {' | '.join(columns)} |" in text, section
+    for value in DIRECTIONS:
+        assert f"`{value}`" in text, value
+    for name in GLOBAL_FILES:
+        assert f"`{name}`" in text, name
+    assert STAMP_FILE in text
+
+
+def test_stack_hints_headings():
+    text = (ROOT / "shared/index/stack-hints.md").read_text(encoding="utf-8")
+    for heading in ("## Общее", "## .NET", "## Laravel", "## PHP без фреймворка", "## React и другие фронты"):
+        assert f"\n{heading}\n" in text, heading
+
+
+def test_adapters_no_branch_exception():
+    text = (ROOT / "shared/access/adapters.md").read_text(encoding="utf-8")
+    assert "отдельную ветку" not in text
+    assert "/sa-index-docs" in text

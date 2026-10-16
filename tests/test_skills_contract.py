@@ -79,12 +79,12 @@ def test_tdd_clarify_contract():
 
 
 def test_stage_skills_use_sa_paths():
-    for name in ("tdd-impact", "tdd-start", "tdd-clarify", "tdd-draft"):
+    for name in ("tdd-impact", "tdd-start", "tdd-clarify", "tdd-draft", "tdd-check", "tdd-update"):
         assert "sa_paths.py" in _skill(name), name
 
 
 def test_stage_skills_read_shared_writing_rules():
-    for name in ("tdd-impact", "tdd-start", "tdd-clarify", "tdd-draft"):
+    for name in ("tdd-impact", "tdd-start", "tdd-clarify", "tdd-draft", "tdd-check", "tdd-update"):
         assert "shared/rules/artifact-writing.md" in _skill(name), name
 
 
@@ -157,6 +157,8 @@ def test_tdd_draft_contract():
             "sa_draft.py gaps tasks/<KEY>",
             "sa_draft.py plan tasks/<KEY>",
             "sa_draft.py assemble tasks/<KEY>",
+            "sa_draft.py mark tasks/<KEY>",
+            "sa_state.py set tasks/<KEY> published",
             "sa_ids.py next tasks/<KEY>",
             "sa_validate.py tasks/<KEY>",
             "sa_state.py record tasks/<KEY> BRD impact-map context questions",
@@ -182,5 +184,95 @@ def test_tdd_draft_contract():
 
 
 def test_stage_skills_write_absolute_paths():
-    for name in ("tdd-impact", "tdd-start", "tdd-clarify", "tdd-draft"):
+    for name in ("tdd-impact", "tdd-start", "tdd-clarify", "tdd-draft", "tdd-check", "tdd-update"):
         assert "<tasks_dir>/<KEY>/" in _skill(name), name
+
+
+def test_tdd_check_contract():
+    _assert_contains(
+        _skill("tdd-check"),
+        (
+            "allowed-tools: Bash(python3:*)",
+            "sa_paths.py",
+            "sa_status.py tasks/<KEY>",
+            "sa_validate.py tasks/<KEY>",
+            "sa_review.py precheck tasks/<KEY>",
+            "sa_review.py coverage tasks/<KEY>",
+            "sa_review.py asis tasks/<KEY>",
+            "sa_ids.py next tasks/<KEY> RV",
+            "sa_state.py record tasks/<KEY> draft",
+            "sa_state.py set tasks/<KEY> stage check",
+            "sa-skills:tdd-reviewer",
+            "sa-skills:source-reader",
+            "--code",
+            "<tasks_dir>/<KEY>/review.md",
+            "`открыто`",
+            "`принято`",
+            "`отклонено`",
+            "`закрыто`",
+            "/tdd-update",
+            "stage done",
+        ),
+    )
+
+
+def test_tdd_update_contract():
+    _assert_contains(
+        _skill("tdd-update"),
+        (
+            "allowed-tools: Bash(python3:*)",
+            "sa_paths.py",
+            "sa_status.py tasks/<KEY>",
+            "sa_review.py status tasks/<KEY> принято",
+            "sa_review.py status tasks/<KEY> отклонено",
+            "sa_update.py plan tasks/<KEY>",
+            "sa_update.py diff tasks/<KEY>",
+            "sa_update.py apply tasks/<KEY>",
+            "sa_update.py drop tasks/<KEY>",
+            "sa_draft.py plan tasks/<KEY>",
+            "sa_draft.py mark tasks/<KEY>",
+            "sa_draft.py assemble tasks/<KEY>",
+            "sa_draft.py gaps tasks/<KEY>",
+            "sa_ids.py next tasks/<KEY>",
+            "sa_validate.py tasks/<KEY>",
+            "sa_state.py record tasks/<KEY> BRD impact-map context questions",
+            "sa_state.py set tasks/<KEY> stage draft",
+            "sa_state.py set tasks/<KEY> published",
+            "<tasks_dir>/<KEY>/draft/",
+            "<tasks_dir>/<KEY>/proposals/",
+            "‹R-01, IM-02, D-01›",
+            "⚠ Q-",
+            "правка человека",
+            "Без привязки",
+            "/tdd-check",
+        ),
+    )
+
+
+def test_artifact_writing_lists_all_stages():
+    text = (ROOT / "shared/rules/artifact-writing.md").read_text(encoding="utf-8")
+    for stage in ("/tdd-impact", "/tdd-start", "/tdd-clarify", "/tdd-draft", "/tdd-check", "/tdd-update"):
+        assert stage in text, stage
+
+
+def test_sa_index_docs_contract():
+    _assert_contains(
+        _skill("sa-index-docs"),
+        (
+            "allowed-tools: Bash(python3:*)",
+            "sa_paths.py",
+            "sa_index.py survey <repos_root>/<сервис>",
+            "sa_index.py changed <repos_root>/<сервис>",
+            "sa_index.py check <repos_root>/<сервис>",
+            "sa_index.py stamp <repos_root>/<сервис>",
+            "sa_index.py aggregate",
+            "aggregate --force",
+            "sa-skills:docs-indexer",
+            "--full",
+            "правка человека",
+            "split",
+            "<repos_root>/<сервис>/docs/",
+            "<плагин>/shared/index/docs-schema.md",
+            "без веток и коммитов",
+        ),
+    )

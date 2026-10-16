@@ -32,3 +32,52 @@ def draft_task(task_dir: Path) -> Path:
     write_sections(task_dir)
     assemble(task_dir, author="Иван Петров", today=date(2026, 10, 15))
     return task_dir
+
+
+REVIEW_HEAD = (
+    "---\ndraft: {sha}\nreviewed: 2026-10-16\nround: 1\n---\n# Ревью черновика LKP-DEMO\n\n## Замечания\n\n"
+    "| ID | Важность | Где | Проблема | ← Ссылка | Предложение | Статус |\n|---|---|---|---|---|---|---|\n"
+)
+
+
+def write_review(task_dir: Path, rows: list[str]) -> Path:
+    from sa_review import coverage_table
+    from sa_state import file_sha1
+
+    text = REVIEW_HEAD.format(sha=file_sha1(task_dir / "draft.md")) + "".join(f"{row}\n" for row in rows)
+    text += "\n## Покрытие BRD\n\n" + coverage_table(task_dir) + "\n"
+    path = task_dir / "review.md"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+import subprocess
+
+INDEX_REPOS = Path(__file__).parent / "fixtures" / "e2e" / "index-repos"
+INDEX_DOCS = Path(__file__).parent / "fixtures" / "index-docs"
+
+
+def git(repo: Path, *args: str) -> str:
+    result = subprocess.run(
+        ["git", "-C", str(repo), "-c", "user.name=SA", "-c", "user.email=sa@example.com", *args],
+        check=True, capture_output=True, text=True,
+    )
+    return result.stdout
+
+
+@pytest.fixture
+def index_repos(tmp_path: Path):
+    root = tmp_path / "repos"
+
+    def make(name: str, docs: bool = True, init: bool = True) -> Path:
+        repo = root / name
+        shutil.copytree(INDEX_REPOS / name, repo)
+        if docs:
+            shutil.copytree(INDEX_DOCS / name / "docs", repo / "docs")
+        if init:
+            git(repo, "init", "-q")
+            git(repo, "add", "-A")
+            git(repo, "commit", "-qm", "init")
+        return repo
+
+    return make

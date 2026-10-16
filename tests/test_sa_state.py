@@ -86,7 +86,7 @@ def test_init_state(tmp_path):
     assert state == load_state(target)
     assert state["task"] == "LKP-1" and state["stage"] == "impact"
     assert state["access"] == {} and state["inputs"] == {} and state["sections"] == {}
-    assert state["plugin_version"] == "0.3.1"
+    assert state["plugin_version"] == "0.4.0"
     with pytest.raises(ArtifactError, match="уже есть"):
         init_state(target, "LKP-1")
 
@@ -138,3 +138,29 @@ def test_cli_init_and_set(tmp_path, capsys):
     assert main(["init"]) == 2
     assert main([]) == 2
     assert "init" in capsys.readouterr().err
+
+
+def test_set_published(draft_task):
+    from sa_state import file_sha1, set_value
+
+    state = set_value(draft_task, "published", "https://wiki/page/1")
+    assert state["published"] == {"url": "https://wiki/page/1", "hash": file_sha1(draft_task / "draft-publish.md")}
+
+
+def test_set_published_version(draft_task):
+    from sa_state import set_value
+
+    with pytest.raises(ArtifactError, match="сначала set published"):
+        set_value(draft_task, "published.version", "7")
+    set_value(draft_task, "published", "https://wiki/page/1")
+    assert set_value(draft_task, "published.version", "7")["published"]["version"] == 7
+    for bad in ("0", "-1", "семь", "٣"):
+        with pytest.raises(ArtifactError, match="целое число больше нуля"):
+            set_value(draft_task, "published.version", bad)
+
+
+def test_set_published_needs_publish_file(task_dir):
+    from sa_state import set_value
+
+    with pytest.raises(ArtifactError, match="нет draft-publish.md"):
+        set_value(task_dir, "published", "https://wiki/page/1")

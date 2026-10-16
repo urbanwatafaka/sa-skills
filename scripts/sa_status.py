@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from sa_artifacts import ArtifactError, Question, find_refs, find_table, parse_questions, parse_tables, split_frontmatter
+from sa_review import review_summary
 from sa_state import ARTIFACTS, load_state, stale_inputs
 from sa_validate import CONTEXT_COLUMNS
 
@@ -17,11 +18,23 @@ _NEXT = {
 }
 
 
-def next_step(stage: str | None, blocking_open: int, brd_complete: bool | None, unresolved_scope: int = 0) -> str:
+def next_step(
+    stage: str | None, blocking_open: int, brd_complete: bool | None, unresolved_scope: int = 0, review: dict | None = None
+) -> str:
     if brd_complete is False:
         return "переслать вопросы PO, после ответов запустить /tdd-impact повторно"
     if stage == "clarify":
         return "/tdd-clarify — закрыть блокирующие вопросы" if blocking_open or unresolved_scope else "/tdd-draft"
+    if review and review.get("broken"):
+        return "/tdd-check — review.md повреждён, его перепишет /tdd-check"
+    if stage == "check" and review:
+        if review["stale"]:
+            return "/tdd-check — черновик менялся после ревью"
+        if review["accepted"]:
+            return "/tdd-update — внести принятые замечания, затем /tdd-check"
+        if review["open"]:
+            return "разобрать замечания review.md: /tdd-update <RV-xx…> — принять, «/tdd-update отклонить RV-xx» — отклонить"
+        return "замечаний нет — завершить: sa_state.py set <папка задачи> stage done"
     return _NEXT.get(stage, "проверь state.json: неизвестная стадия")
 
 
@@ -86,11 +99,18 @@ def build_status(task_dir: Path) -> str:
     else:
         lines.append("Черновик: секций нет")
 
+    review = review_summary(task_dir)
+    if review and review.get("broken"):
+        lines.append("Ревью: review.md повреждён — перепишет /tdd-check")
+    elif review:
+        line = f"Ревью: открыто {review['open']} (критично {review['critical']}), принято {review['accepted']}"
+        lines.append(line + (" · устарело — черновик менялся после ревью" if review["stale"] else ""))
+
     stale = stale_inputs(task_dir, state)
     lines.append(f"Устаревшие входы: {', '.join(stale) if stale else 'нет'}")
 
     blocking_open = sum(q.blocking for q in questions if q.status == "open")
-    lines.append(f"Следующий шаг: {next_step(state.get('stage'), blocking_open, brd_complete, len(unresolved))}")
+    lines.append(f"Следующий шаг: {next_step(state.get('stage'), blocking_open, brd_complete, len(unresolved), review)}")
     return "\n".join(lines)
 
 

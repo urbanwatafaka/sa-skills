@@ -28,13 +28,15 @@ from sa_draft import (
     openapi_errors,
     placeholders,
     render_body,
+    without_open_questions,
     section_path,
     stubs,
     task_manifest,
     trace_refs,
 )
 from sa_puml import kind_errors, structural_errors
-from sa_state import ACCESS_KEYS, ACCESS_MODES, ARTIFACTS, STAGES, TEMPLATE_RE, load_state
+from sa_review import COVERAGE_COLUMNS, REVIEW_COLUMNS, SEVERITIES, STATUSES, WHOLE, coverage
+from sa_state import ACCESS_KEYS, ACCESS_MODES, ARTIFACTS, STAGES, TEMPLATE_RE, file_sha1, load_state
 
 KINDS = {"процесс", "сервис", "модуль", "API", "Kafka", "БД", "роль", "UI", "конфиг"}
 IMPACTS = {"новый", "изм.", "удал.", "?"}
@@ -286,6 +288,18 @@ def validate_state(data: dict) -> list[str]:
                 errors.append(f"sections.{name}.hash: ожидается sha1")
             if not isinstance(section.get("edited_by_human"), bool):
                 errors.append(f"sections.{name}.edited_by_human: true или false")
+            if "generated" in section and not _is_sha1(section["generated"]):
+                errors.append(f"sections.{name}.generated: ожидается sha1")
+
+    rows = data.get("rows", {})
+    if not isinstance(rows, dict):
+        errors.append("rows: ожидается объект")
+    else:
+        for rid, value in rows.items():
+            if not any(is_id(kind, rid) for kind in TRACE_KINDS):
+                errors.append(f"rows: «{rid}» — не R-xx, IM-xx или D-xx")
+            if not _is_sha1(value):
+                errors.append(f"rows.{rid}: ожидается sha1")
 
     access = data.get("access", {})
     if not isinstance(access, dict):
@@ -296,6 +310,19 @@ def validate_state(data: dict) -> list[str]:
                 errors.append(f"access: неизвестный ключ {key}; допустимы {_one_of(ACCESS_KEYS)}")
             if not (isinstance(mode, str) and mode in ACCESS_MODES):
                 errors.append(f"access.{key}: режим одно из {_one_of(ACCESS_MODES)}")
+
+    published = data.get("published")
+    if published is not None:
+        if not isinstance(published, dict):
+            errors.append("published: ожидается объект")
+        else:
+            if not (isinstance(published.get("url"), str) and published["url"].strip()):
+                errors.append("published.url: непустая ссылка на страницу")
+            if not _is_sha1(published.get("hash")):
+                errors.append("published.hash: ожидается sha1")
+            version = published.get("version")
+            if version is not None and not (type(version) is int and version > 0):
+                errors.append("published.version: целое число больше нуля")
     return errors
 
 
@@ -434,9 +461,68 @@ def validate_draft(task_dir: Path, state: dict, known: dict) -> list[str]:
     errors += [f"draft.md: во frontmatter нет ключа {key}" for key in HEADER_KEYS if meta.get(key) in (None, "")]
     if meta.get("template") not in (None, "", state.get("template")):
         errors.append(f"draft.md: template {meta['template']} не совпадает с state.json ({state.get('template')})")
-    if complete and body.strip() != render_body(task_dir, manifest, str(state.get("task", ""))).strip():
+    if complete and without_open_questions(body).strip() != without_open_questions(
+        render_body(task_dir, manifest, str(state.get("task", "")))
+    ).strip():
         errors.append("draft.md: устарел или правился вручную — правь секции в draft/ и запусти sa_draft.py assemble")
     return errors
+
+
+def validate_review(text: str, known: dict, task_dir: Path, state: dict) -> tuple[list[str], set[str] | None]:
+    errors: list[str] = []
+    meta, body = split_frontmatter(text)
+    if not _is_sha1(meta.get("draft")):
+        errors.append("draft: sha1 draft.md, по которому делалось ревью")
+    if not DATE_RE.fullmatch(str(meta.get("reviewed", ""))):
+        errors.append("reviewed должен быть в формате ГГГГ-ММ-ДД")
+    round_ = meta.get("round")
+    if not (isinstance(round_, int) and not isinstance(round_, bool) and round_ >= 1):
+        errors.append("round: целое число ≥ 1")
+    try:
+        places: set[str] | None = {s.id for s in task_manifest(state).sections} | set(WHOLE)
+    except ArtifactError:
+        places = None
+    tables = parse_tables(body)
+    table = find_table(tables, REVIEW_COLUMNS)
+    ids: set[str] | None = None
+    if table is None:
+        errors.append(f"нет таблицы замечаний с колонками {', '.join(REVIEW_COLUMNS)}")
+    else:
+        for row in table.rows:
+            rid = row["ID"]
+            if not is_id("RV", rid):
+                errors.append(f"{rid}: ID должен быть вида RV-01")
+            if row["Важность"] not in SEVERITIES:
+                errors.append(f"{rid}: важность «{row['Важность']}» не из списка: {_one_of(set(SEVERITIES))}")
+            if places is not None and row["Где"] not in places:
+                errors.append(f"{rid}: где «{row['Где']}» — id секции шаблона, шапка или весь черновик")
+            if row["Проблема"] in EMPTY:
+                errors.append(f"{rid}: пустая проблема")
+            if row["← Ссылка"] not in EMPTY:
+                tokens = [t.strip() for t in row["← Ссылка"].split(",") if t.strip()]
+                errors += [f"{rid}: «{t}» в ← Ссылка — не ID" for t in tokens if find_refs(t) != [t]]
+                refs = [t for t in tokens if find_refs(t) == [t]]
+                if row["Статус"] not in ("принято", "отклонено", "закрыто"):
+                    errors += [f"{rid}: ссылка на несуществующий {r}" for r in _unknown(refs, known)]
+            if row["Статус"] not in STATUSES:
+                errors.append(f"{rid}: статус «{row['Статус']}» не из списка: {_one_of(set(STATUSES))}")
+        ids_list = [row["ID"] for row in table.rows]
+        errors += [f"{d}: ID повторяется" for d in _duplicates(ids_list)]
+        ids = set(ids_list)
+    matrix = find_table(tables, COVERAGE_COLUMNS)
+    if matrix is None:
+        return errors + [f"нет таблицы покрытия с колонками {', '.join(COVERAGE_COLUMNS)}"], ids
+    listed = [row["R"] for row in matrix.rows]
+    errors += [f"{d}: R повторяется в матрице покрытия" for d in _duplicates(listed)]
+    draft = task_dir / ARTIFACTS["draft"]
+    if draft.exists() and meta.get("draft") == file_sha1(draft):
+        if known.get("R") is not None:
+            errors += [f"{r}: нет в матрице покрытия" for r in sorted(known["R"] - set(listed))]
+        expected = {r: (", ".join(s) or "—", ", ".join(a) or "—") for r, s, a in coverage(task_dir)}
+        actual = {row["R"]: (row["Секции"], row["Истории"]) for row in matrix.rows}
+        if any(actual[r] != expected[r] for r in actual if r in expected) or set(actual) - set(expected):
+            errors.append("матрица покрытия не совпадает с черновиком — вставь вывод sa_review.py coverage")
+    return errors, ids
 
 
 def validate_task(task_dir: Path) -> list[str]:
@@ -455,6 +541,10 @@ def validate_task(task_dir: Path) -> list[str]:
     if not (task_dir / ARTIFACTS["impact-map"]).exists():
         errors += _missing_impact_map_errors(task_dir)
     errors += validate_draft(task_dir, state, known)
+    if (task_dir / ARTIFACTS["review"]).exists():
+        _run(task_dir, "review", lambda t: validate_review(t, known, task_dir, state), errors)
+    elif state.get("stage") in ("check", "done"):
+        errors.append("review.md: нет файла — запусти /tdd-check")
     return errors
 
 
