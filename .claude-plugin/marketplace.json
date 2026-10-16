@@ -1,0 +1,11 @@
+{
+  "name": "sa-skills-marketplace",
+  "owner": {"name": "Команда системных аналитиков"},
+  "plugins": [
+    {
+      "name": "sa-skills",
+      "source": "./",
+      "description": "Пайплайн системного аналитика от BRD до проверенного черновика ТЗ."
+    }
+  ]
+}

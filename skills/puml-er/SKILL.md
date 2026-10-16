@@ -1,0 +1,68 @@
+---
+name: puml-er
+description: ER-диаграмма PlantUML для ТЗ — затронутые таблицы схема.таблица с полями и связями, новые таблицы <<NEW>> LightGreen, новые поля <color:red>. Используй для «3. БД» в разделе «Доработки» в /tdd-draft или когда просят ER-диаграмму или схему БД.
+allowed-tools: Bash(python3:*)
+---
+
+# puml-er
+
+`<база>` — базовая директория этого скила, `<плагин>` = `<база>/../..`. Перед работой прочитай `<плагин>/shared/blocks/diagrams.md`.
+
+## Когда применять
+
+- В сервисе добавляются или меняются таблицы, поля или связи. Файл — `draft/diagrams/03-changes-er.puml` (у второго сервиса — `-2`), строка `@diagram` — в «3. БД» этого сервиса.
+
+Не применять: поток данных между сервисами — `puml-c2`. Схема не меняется — диаграммы нет, в «3. БД» фраза «Изменений схемы БД не требуется — <причина>».
+
+## Каркас
+
+```plantuml
+@startuml
+hide circle
+skinparam defaultFontName Arial
+skinparam linetype ortho
+skinparam ArrowThickness 2
+skinparam entity {
+  BackgroundColor<<NEW>> LightGreen
+}
+
+entity "partners.promocodes" as promocodes {
+  * id : bigint
+  --
+  * partner_id : bigint
+  <color:red>owner_inn : varchar(12)</color>
+}
+entity "partners.partners" as partners {
+  * id : bigint
+  --
+  inn : varchar(12)
+}
+entity "partners.promocode_checks" as checks <<NEW>> {
+  * id : bigint
+  --
+  * promocode_id : bigint
+  * checked_at : timestamp
+}
+partners ||--o{ promocodes
+promocodes ||--o{ checks
+@enduml
+```
+
+## Соглашения
+
+- Имя сущности — `схема.таблица`; поля и типы — как в БД, из карты влияния, источника или решения `D-xx`.
+- Только затронутые таблицы и прямые связи; у неизменных таблиц — ключи и поля связи.
+- `*` — обязательное поле.
+- Новая таблица — стереотип `<<NEW>>` (фон LightGreen), новое поле в существующей таблице — `<color:red>…</color>`, без `#` перед именем цвета.
+- Новое значение существующего enum — английское имя по стилю существующих значений рядом с русской подписью, с пометкой «предложено».
+- Минимум пересечений: управляй порядком объявления сущностей и связей.
+
+## Чек-лист
+
+- [ ] Каждая таблица есть в карте влияния или источнике.
+- [ ] Новые таблицы `<<NEW>>`, новые поля `<color:red>`, совпадают с «1. Описание изменений».
+- [ ] Кардинальность связей указана.
+
+## Проверка
+
+`python3 <плагин>/scripts/sa_puml.py check <путь к .puml>` — исправляй, пока не `OK`. Если `проверка: только структура`, скажи в итоге, что синтаксис PlantUML не проверен.

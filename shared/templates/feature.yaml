@@ -1,0 +1,66 @@
+# Шаблон ТЗ «доработка существующих сервисов» — канон типа 1.
+# Эталон оформления — Confluence pageId 110167390 («Раздел «Сотрудники»»), скелет — pageId 110167415 («Образец»).
+# Плоское подмножество YAML: «ключ: значение», списки [a, b]. Разбирает scripts/sa_template.py.
+# block — файл shared/blocks/<block>.md или —; im_kinds — виды строк карты влияния для среза секции ([] — все в скоупе).
+# level — уровень заголовка секции: 1 (# …, по умолчанию) или 2 (## … внутри предыдущего раздела).
+# Порядок секций фиксирован. Необязательная секция без содержания не создаётся — заглушек нет.
+# «Открытые вопросы» собирает sa_draft.py assemble из questions.md, отдельного файла секции нет.
+name: feature
+version: 2.0
+title: ТЗ на доработку
+sections:
+  - id: 01-brd
+    title: BRD
+    block: brd
+    required: true
+    diagrams: []
+    im_kinds: []
+  - id: 02-architecture
+    title: Архитектура и Процесс
+    block: architecture
+    required: true
+    diagrams: [c2, sequence]
+    im_kinds: []
+  - id: 03-changes
+    title: Доработки
+    block: changes
+    required: true
+    diagrams: [er]
+    im_kinds: []
+  - id: 04-kafka
+    title: Топики Кафка
+    block: kafka
+    required: false
+    level: 2
+    diagrams: []
+    im_kinds: [Kafka]
+  - id: 05-dependent
+    title: Зависимые процессы и сервисы
+    block: dependent
+    required: false
+    diagrams: []
+    im_kinds: [процесс]
+  - id: 06-configs
+    title: Конфиги
+    block: configs
+    required: false
+    diagrams: []
+    im_kinds: [конфиг]
+  - id: 07-access
+    title: Доступы
+    block: access
+    required: false
+    diagrams: []
+    im_kinds: [роль]
+  - id: 08-testing
+    title: Тестирование и регресс
+    block: testing
+    required: true
+    diagrams: []
+    im_kinds: []
+  - id: 09-release
+    title: Условия релиза
+    block: release
+    required: false
+    diagrams: []
+    im_kinds: [UI]

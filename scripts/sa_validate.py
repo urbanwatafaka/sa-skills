@@ -1,0 +1,472 @@
+"""Проверка артефактов задачи по схемам из shared/schemas/artifacts.md."""
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+from sa_artifacts import (
+    ArtifactError,
+    find_refs,
+    find_table,
+    is_id,
+    parse_questions,
+    parse_tables,
+    ref_prefix,
+    split_frontmatter,
+)
+from sa_draft import (
+    CODE_REF_RE,
+    DIAGRAM_RE,
+    DIAGRAM_REF_RE,
+    DTO_RE,
+    HEADER_KEYS,
+    LABEL,
+    OPENAPI_RE,
+    OPENAPI_REF_RE,
+    dto_errors,
+    openapi_errors,
+    placeholders,
+    render_body,
+    section_path,
+    stubs,
+    task_manifest,
+    trace_refs,
+)
+from sa_puml import kind_errors, structural_errors
+from sa_state import ACCESS_KEYS, ACCESS_MODES, ARTIFACTS, STAGES, TEMPLATE_RE, load_state
+
+KINDS = {"процесс", "сервис", "модуль", "API", "Kafka", "БД", "роль", "UI", "конфиг"}
+IMPACTS = {"новый", "изм.", "удал.", "?"}
+IM_STATUSES = {"факт", "допущение"}
+CONFIDENCE = {"высокая", "средняя", "низкая"}
+CONFIDENCE_RANK = {"высокая": 2, "средняя": 1, "низкая": 0}
+BRD_TYPES = {"функц.", "UI", "данные", "интеграция", "НФТ", "ограничение"}
+EMPTY = {"", "—", "-"}
+
+BRD_COLUMNS = ["ID", "Требование", "Тип"]
+IMPACT_COLUMNS = ["ID", "Объект", "Вид", "Влияние", "← R", "Источник", "Статус", "Уверенность"]
+DECISION_COLUMNS = ["ID", "← Q", "Решение", "Кто/где", "Дата"]
+CONTEXT_COLUMNS = ["← IM", "Скоуп", "Комментарий"]
+SCOPES = {"в скоупе", "вне скоупа", "?"}
+CONTEXT_SECTIONS = ["## Цель", "## Границы"]
+TEMPLATE_TYPES = {"feature", "integration"}
+TRACE_KINDS = ("R", "IM", "D")
+
+DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
+SEMVER_RE = re.compile(r"\d+\.\d+\.\d+")
+SHA1_RE = re.compile(r"[0-9a-f]{40}")
+
+
+def _one_of(values: set[str]) -> str:
+    return ", ".join(sorted(values))
+
+
+def _duplicates(ids: list[str]) -> list[str]:
+    seen: set[str] = set()
+    duplicates: list[str] = []
+    for item in ids:
+        if item in seen and item not in duplicates:
+            duplicates.append(item)
+        seen.add(item)
+    return duplicates
+
+
+def _unknown(refs: list[str], known: dict) -> list[str]:
+    return [r for r in refs if r != "BRD" and known.get(ref_prefix(r)) is not None and r not in known[ref_prefix(r)]]
+
+
+def validate_brd(text: str) -> tuple[list[str], set[str] | None]:
+    errors: list[str] = []
+    meta, body = split_frontmatter(text)
+    for key in ("source", "fetched", "brd_complete", "missing"):
+        if key not in meta:
+            errors.append(f"во frontmatter нет ключа {key}")
+    if "fetched" in meta and not DATE_RE.fullmatch(str(meta["fetched"])):
+        errors.append("fetched должен быть в формате ГГГГ-ММ-ДД")
+    if "brd_complete" in meta and not isinstance(meta["brd_complete"], bool):
+        errors.append("brd_complete должен быть true или false")
+    if "missing" in meta and not isinstance(meta["missing"], list):
+        errors.append("missing должен быть списком вида [a, b]")
+    if meta.get("brd_complete") is False and meta.get("missing") == []:
+        errors.append("brd_complete: false, но missing пуст — укажи, чего не хватает")
+    table = find_table(parse_tables(body), BRD_COLUMNS)
+    if table is None:
+        return errors + [f"нет таблицы с колонками {', '.join(BRD_COLUMNS)}"], None
+    ids = [row["ID"] for row in table.rows]
+    for row in table.rows:
+        if not is_id("R", row["ID"]):
+            errors.append(f"{row['ID']}: ID должен быть вида R-01")
+        if row["Требование"] in EMPTY:
+            errors.append(f"{row['ID']}: пустое требование")
+        if row["Тип"] not in BRD_TYPES:
+            errors.append(f"{row['ID']}: тип «{row['Тип']}» не из списка: {_one_of(BRD_TYPES)}")
+    errors += [f"{d}: ID повторяется" for d in _duplicates(ids)]
+    return errors, set(ids)
+
+
+def validate_impact_map(text: str, known: dict) -> tuple[list[str], set[str] | None]:
+    errors: list[str] = []
+    meta, body = split_frontmatter(text)
+    if not isinstance(meta.get("index_used"), bool):
+        errors.append("во frontmatter нужен index_used: true или false")
+    if meta.get("confidence_cap") not in CONFIDENCE:
+        errors.append(f"confidence_cap должен быть одним из: {_one_of(CONFIDENCE)}")
+    if meta.get("index_used") is False and meta.get("confidence_cap") == "высокая":
+        errors.append("index_used: false, но confidence_cap: высокая — без индекса не выше средняя")
+    table = find_table(parse_tables(body), IMPACT_COLUMNS)
+    if table is None:
+        return errors + [f"нет таблицы с колонками {', '.join(IMPACT_COLUMNS)}"], None
+    ids = [row["ID"] for row in table.rows]
+    for row in table.rows:
+        rid = row["ID"]
+        if not is_id("IM", rid):
+            errors.append(f"{rid}: ID должен быть вида IM-01")
+        if row["Вид"] not in KINDS:
+            errors.append(f"{rid}: вид «{row['Вид']}» не из списка: {_one_of(KINDS)}")
+        if row["Влияние"] not in IMPACTS:
+            errors.append(f"{rid}: влияние «{row['Влияние']}» не из списка: {_one_of(IMPACTS)}")
+        if row["Статус"] not in IM_STATUSES:
+            errors.append(f"{rid}: статус «{row['Статус']}» не из списка: {_one_of(IM_STATUSES)}")
+        if row["Уверенность"] not in CONFIDENCE:
+            errors.append(f"{rid}: уверенность «{row['Уверенность']}» не из списка: {_one_of(CONFIDENCE)}")
+        cap = meta.get("confidence_cap")
+        if (
+            cap in CONFIDENCE
+            and row["Уверенность"] in CONFIDENCE
+            and CONFIDENCE_RANK[row["Уверенность"]] > CONFIDENCE_RANK[cap]
+        ):
+            errors.append(f"{rid}: уверенность выше потолка confidence_cap ({cap})")
+        if row["Статус"] == "факт" and row["Источник"] in EMPTY:
+            errors.append(f"{rid}: факт без источника — укажи источник или поменяй статус на допущение")
+        refs = [r for r in find_refs(row["← R"]) if ref_prefix(r) == "R"]
+        if not refs:
+            errors.append(f"{rid}: нет ссылки на пункт BRD в колонке ← R")
+        errors += [f"{rid}: ссылка на несуществующий {r}" for r in _unknown(refs, known)]
+    errors += [f"{d}: ID повторяется" for d in _duplicates(ids)]
+    return errors, set(ids)
+
+
+def validate_questions(text: str, known: dict) -> tuple[list[str], set[str] | None]:
+    errors: list[str] = []
+    _, body = split_frontmatter(text)
+    questions = parse_questions(body)
+    for q in questions:
+        if q.section == "":
+            errors.append(f"{q.id}: вопрос вне секций «## Для PO» и «## Для аналитика»")
+        elif q.section != q.audience:
+            errors.append(f"{q.id}: лежит в секции {q.section}, а адресован {q.audience}")
+        if not q.refs:
+            errors.append(f"{q.id}: нет ссылки [R-xx] или [IM-xx]")
+        if "BRD" in q.refs and q.audience != "PO":
+            errors.append(f"{q.id}: ссылка [BRD] допустима только в вопросах PO")
+        errors += [f"{q.id}: «{t}» — не ID и не BRD" for t in q.bad_refs]
+        errors += [f"{q.id}: ссылка на несуществующий {r}" for r in _unknown(q.refs, known)]
+        if q.audience == "PO":
+            found = list(dict.fromkeys(
+                r for line in [q.text, *q.details] for r in find_refs(line) if ref_prefix(r) in {"R", "IM", "D", "RV"}
+            ))
+            if found:
+                errors.append(
+                    f"{q.id}: в тексте вопроса PO не должно быть ссылок {', '.join(found)} — оставь их только в [..] в начале"
+                )
+    ids = [q.id for q in questions]
+    errors += [f"{d}: ID повторяется" for d in _duplicates(ids)]
+    return errors, set(ids)
+
+
+def validate_decisions(text: str, known: dict) -> tuple[list[str], set[str] | None]:
+    errors: list[str] = []
+    _, body = split_frontmatter(text)
+    table = find_table(parse_tables(body), DECISION_COLUMNS)
+    if table is None:
+        return [f"нет таблицы с колонками {', '.join(DECISION_COLUMNS)}"], None
+    ids = [row["ID"] for row in table.rows]
+    for row in table.rows:
+        did = row["ID"]
+        if not is_id("D", did):
+            errors.append(f"{did}: ID должен быть вида D-01")
+        if row["← Q"] not in EMPTY:
+            refs = [r for r in find_refs(row["← Q"]) if ref_prefix(r) == "Q"]
+            if not refs:
+                errors.append(f"{did}: в колонке ← Q ожидается Q-PO-xx, Q-SA-xx или —")
+            errors += [f"{did}: ссылка на несуществующий {r}" for r in _unknown(refs, known)]
+        if row["Решение"] in EMPTY:
+            errors.append(f"{did}: пустое решение")
+        if not DATE_RE.fullmatch(row["Дата"]):
+            errors.append(f"{did}: дата должна быть в формате ГГГГ-ММ-ДД")
+    errors += [f"{d}: ID повторяется" for d in _duplicates(ids)]
+    return errors, set(ids)
+
+
+def validate_context(text: str, known: dict, template: str | None) -> tuple[list[str], None]:
+    errors: list[str] = []
+    meta, body = split_frontmatter(text)
+    value = meta.get("template")
+    if not (isinstance(value, str) and TEMPLATE_RE.fullmatch(value)):
+        errors.append("template: формат имя@мажор.минор, например feature@1.0")
+    else:
+        name = value.split("@")[0]
+        if name not in TEMPLATE_TYPES:
+            errors.append(f"template: тип {name} не из списка: feature, integration")
+        if template is not None and value != template:
+            errors.append(f"template {value} не совпадает с state.json ({template})")
+    for key in ("release", "po"):
+        if meta.get(key) in (None, ""):
+            errors.append(f"во frontmatter нет ключа {key}")
+    lines = {line.strip() for line in body.splitlines()}
+    errors += [f"нет раздела «{section}»" for section in CONTEXT_SECTIONS if section not in lines]
+    table = find_table(parse_tables(body), CONTEXT_COLUMNS)
+    if table is None:
+        return errors + [f"нет таблицы с колонками {', '.join(CONTEXT_COLUMNS)}"], None
+    listed: list[str] = []
+    for row in table.rows:
+        refs = [r for r in find_refs(row["← IM"]) if ref_prefix(r) == "IM"]
+        if len(refs) != 1:
+            errors.append(f"«{row['← IM']}»: в колонке ← IM нужен ровно один IM-xx")
+            continue
+        rid = refs[0]
+        listed.append(rid)
+        if row["Скоуп"] not in SCOPES:
+            errors.append(f"{rid}: скоуп «{row['Скоуп']}» не из списка: {_one_of(SCOPES)}")
+        if row["Скоуп"] == "вне скоупа" and row["Комментарий"] in EMPTY:
+            errors.append(f"{rid}: для «вне скоупа» нужна причина в колонке Комментарий")
+        errors += [f"{rid}: ссылка на несуществующий {r}" for r in _unknown([rid], known)]
+        if row["Скоуп"] == "?":
+            q_refs = [r for r in find_refs(row["Комментарий"]) if ref_prefix(r) == "Q"]
+            if not q_refs:
+                errors.append(f"{rid}: для «?» укажи в Комментарии ID вопроса, который решит скоуп")
+            errors += [f"{rid}: ссылка на несуществующий {r}" for r in _unknown(q_refs, known)]
+    errors += [f"{d}: IM повторяется в «Границах»" for d in _duplicates(listed)]
+    if known.get("IM") is not None:
+        missing = sorted(known["IM"] - set(listed))
+        errors += [f"{m}: пункт карты влияния не распределён в «Границах»" for m in missing]
+    return errors, None
+
+
+def _is_sha1(value) -> bool:
+    return isinstance(value, str) and SHA1_RE.fullmatch(value) is not None
+
+
+def validate_state(data: dict) -> list[str]:
+    errors: list[str] = []
+    if not isinstance(data.get("task"), str) or not data["task"]:
+        errors.append("task: нужна непустая строка с ключом задачи")
+    if not (isinstance(data.get("stage"), str) and data["stage"] in STAGES):
+        errors.append(f"stage: одно из {', '.join(STAGES)}")
+    template = data.get("template")
+    if template is not None and not (isinstance(template, str) and TEMPLATE_RE.fullmatch(template)):
+        errors.append("template: формат имя@мажор.минор, например feature@1.0")
+    version = data.get("plugin_version")
+    if not (isinstance(version, str) and SEMVER_RE.fullmatch(version)):
+        errors.append("plugin_version: формат x.y.z")
+
+    inputs = data.get("inputs", {})
+    if not isinstance(inputs, dict):
+        errors.append("inputs: ожидается объект")
+    else:
+        for name, value in inputs.items():
+            if name not in ARTIFACTS:
+                errors.append(f"inputs: неизвестный артефакт {name}")
+            if not _is_sha1(value):
+                errors.append(f"inputs.{name}: ожидается sha1")
+
+    sections = data.get("sections", {})
+    if not isinstance(sections, dict):
+        errors.append("sections: ожидается объект")
+    else:
+        for name, section in sections.items():
+            section = section if isinstance(section, dict) else {}
+            if not _is_sha1(section.get("hash")):
+                errors.append(f"sections.{name}.hash: ожидается sha1")
+            if not isinstance(section.get("edited_by_human"), bool):
+                errors.append(f"sections.{name}.edited_by_human: true или false")
+
+    access = data.get("access", {})
+    if not isinstance(access, dict):
+        errors.append("access: ожидается объект")
+    else:
+        for key, mode in access.items():
+            if not (isinstance(key, str) and key in ACCESS_KEYS):
+                errors.append(f"access: неизвестный ключ {key}; допустимы {_one_of(ACCESS_KEYS)}")
+            if not (isinstance(mode, str) and mode in ACCESS_MODES):
+                errors.append(f"access.{key}: режим одно из {_one_of(ACCESS_MODES)}")
+    return errors
+
+
+def _run(task_dir: Path, name: str, check, errors: list[str]) -> set[str] | None:
+    path = task_dir / ARTIFACTS[name]
+    if not path.exists():
+        return None
+    try:
+        found, ids = check(path.read_text(encoding="utf-8"))
+    except ArtifactError as exc:
+        found, ids = [str(exc)], None
+    errors.extend(f"{ARTIFACTS[name]}: {message}" for message in found)
+    return ids
+
+
+def _missing_impact_map_errors(task_dir: Path) -> list[str]:
+    errors: list[str] = []
+    brd = task_dir / ARTIFACTS["BRD"]
+    if brd.exists():
+        try:
+            meta, _ = split_frontmatter(brd.read_text(encoding="utf-8"))
+        except ArtifactError:
+            meta = {}
+        if meta.get("brd_complete") is True:
+            errors.append("impact-map.md: нет файла, а BRD полный — карта влияния должна быть построена")
+    gone = "но impact-map.md нет"
+    questions = task_dir / ARTIFACTS["questions"]
+    if questions.exists():
+        try:
+            _, body = split_frontmatter(questions.read_text(encoding="utf-8"))
+            for q in parse_questions(body):
+                errors += [
+                    f"{ARTIFACTS['questions']}: {q.id}: ссылка на {r}, {gone}"
+                    for r in q.refs if ref_prefix(r) == "IM"
+                ]
+        except ArtifactError:
+            pass
+    context = task_dir / ARTIFACTS["context"]
+    if context.exists():
+        try:
+            _, body = split_frontmatter(context.read_text(encoding="utf-8"))
+            table = find_table(parse_tables(body), CONTEXT_COLUMNS)
+            for row in table.rows if table else []:
+                errors += [
+                    f"{ARTIFACTS['context']}: {r}: ссылка на {r}, {gone}"
+                    for r in find_refs(row["← IM"]) if ref_prefix(r) == "IM"
+                ]
+        except ArtifactError:
+            pass
+    return errors
+
+
+def _question_statuses(task_dir: Path) -> dict[str, str]:
+    path = task_dir / ARTIFACTS["questions"]
+    if not path.exists():
+        return {}
+    try:
+        return {q.id: q.status for q in parse_questions(split_frontmatter(path.read_text(encoding="utf-8"))[1])}
+    except ArtifactError:
+        return {}
+
+
+def validate_draft(task_dir: Path, state: dict, known: dict) -> list[str]:
+    draft_dir = task_dir / "draft"
+    draft_md = task_dir / ARTIFACTS["draft"]
+    if not (draft_dir.is_dir() or draft_md.exists() or state.get("stage") in ("draft", "check", "done")):
+        return []
+    try:
+        manifest = task_manifest(state)
+    except ArtifactError as exc:
+        return [f"draft: {exc}"]
+    errors: list[str] = []
+    statuses = _question_statuses(task_dir)
+    names = {s.id for s in manifest.sections}
+    if draft_dir.is_dir():
+        errors += [
+            f"draft/{p.name}: секции нет в шаблоне {manifest.name}"
+            for p in sorted(draft_dir.glob("*.md")) if p.stem not in names
+        ]
+    complete = True
+    for s in manifest.sections:
+        path = section_path(task_dir, s.id)
+        rel = f"draft/{s.id}.md"
+        if not path.exists():
+            if s.required:
+                errors.append(f"{rel}: нет обязательной секции «{s.title}»")
+                complete = False
+            continue
+        text = path.read_text(encoding="utf-8")
+        first = next((line.strip() for line in text.splitlines() if line.strip()), "")
+        if first != s.heading:
+            errors.append(f"{rel}: первая строка должна быть «{s.heading}»")
+        for stub in stubs(text):
+            errors.append(f"{rel}: заглушка «{stub}» — раздел или пункт без содержания не создаётся")
+        for ref in CODE_REF_RE.findall(text):
+            errors.append(f"{rel}: «{ref}» — ссылки на код остаются в артефактах задачи, не в ТЗ")
+        for token in trace_refs(text):
+            if not any(is_id(kind, token) for kind in TRACE_KINDS):
+                errors.append(f"{rel}: «{token}» в ‹…› — не R-xx, IM-xx или D-xx")
+            elif token not in (known.get(ref_prefix(token)) or set()):
+                errors.append(f"{rel}: ссылка на несуществующий {token}")
+        for qid in placeholders(text):
+            if qid is None:
+                errors.append(f"{rel}: ⚠ без ID вопроса — пиши «⚠ Q-PO-xx» или «⚠ Q-SA-xx»")
+            elif qid not in statuses:
+                errors.append(f"{rel}: ⚠ {qid} — такого вопроса нет")
+        for ref in DIAGRAM_RE.findall(text):
+            if not DIAGRAM_REF_RE.fullmatch(ref):
+                errors.append(f"{rel}: @diagram {ref} — путь вида diagrams/<имя>.puml")
+                complete = False
+            elif not (draft_dir / ref).exists():
+                errors.append(f"{rel}: нет файла draft/{ref}")
+                complete = False
+        for ref in OPENAPI_RE.findall(text):
+            if not OPENAPI_REF_RE.fullmatch(ref):
+                errors.append(f"{rel}: @openapi {ref} — путь вида api/<сервис>.yaml")
+                complete = False
+            elif not (draft_dir / ref).exists():
+                errors.append(f"{rel}: нет файла draft/{ref}")
+                complete = False
+            else:
+                errors += [f"draft/{ref}: {e}" for e in openapi_errors((draft_dir / ref).read_text(encoding="utf-8"))]
+        for name in dict.fromkeys(DTO_RE.findall(text)):
+            errors += [f"{rel}: {e}" for e in dto_errors(task_dir, name)]
+    diagrams = draft_dir / "diagrams"
+    for puml in sorted(diagrams.glob("*.puml")) if diagrams.is_dir() else []:
+        puml_text = puml.read_text(encoding="utf-8")
+        found = structural_errors(puml_text) + kind_errors(puml.name, puml_text)
+        errors += [f"draft/diagrams/{puml.name}: {e}" for e in found]
+    if not draft_md.exists():
+        return errors + ["draft.md: нет файла — собери: sa_draft.py assemble tasks/<KEY>"]
+    try:
+        meta, body = split_frontmatter(draft_md.read_text(encoding="utf-8"))
+    except ArtifactError as exc:
+        return errors + [f"draft.md: {exc}"]
+    errors += [f"draft.md: во frontmatter нет ключа {key}" for key in HEADER_KEYS if meta.get(key) in (None, "")]
+    if meta.get("label") not in (None, "", LABEL):
+        errors.append(f"draft.md: label должен быть {LABEL}")
+    if meta.get("template") not in (None, "", state.get("template")):
+        errors.append(f"draft.md: template {meta['template']} не совпадает с state.json ({state.get('template')})")
+    if complete and body.strip() != render_body(task_dir, manifest, str(state.get("task", ""))).strip():
+        errors.append("draft.md: устарел или правился вручную — правь секции в draft/ и запусти sa_draft.py assemble")
+    return errors
+
+
+def validate_task(task_dir: Path) -> list[str]:
+    try:
+        state = load_state(task_dir)
+    except ArtifactError as exc:
+        return [f"state.json: {exc}"]
+    errors = [f"state.json: {message}" for message in validate_state(state)]
+    known: dict = {"R": None, "IM": None, "Q": None, "D": None}
+    known["R"] = _run(task_dir, "BRD", validate_brd, errors)
+    known["IM"] = _run(task_dir, "impact-map", lambda t: validate_impact_map(t, known), errors)
+    known["Q"] = _run(task_dir, "questions", lambda t: validate_questions(t, known), errors)
+    template = state.get("template") if isinstance(state.get("template"), str) else None
+    _run(task_dir, "context", lambda t: validate_context(t, known, template), errors)
+    known["D"] = _run(task_dir, "decisions", lambda t: validate_decisions(t, known), errors)
+    if not (task_dir / ARTIFACTS["impact-map"]).exists():
+        errors += _missing_impact_map_errors(task_dir)
+    errors += validate_draft(task_dir, state, known)
+    return errors
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) != 1:
+        print("использование: sa_validate.py <папка задачи>", file=sys.stderr)
+        return 2
+    task_dir = Path(argv[0])
+    errors = validate_task(task_dir)
+    if errors:
+        print("\n".join(errors))
+        return 1
+    print(f"OK: {task_dir}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

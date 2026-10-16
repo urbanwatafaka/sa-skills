@@ -1,0 +1,186 @@
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _skill(name: str) -> str:
+    return (ROOT / "skills" / name / "SKILL.md").read_text(encoding="utf-8")
+
+
+def _assert_contains(text: str, fragments: tuple[str, ...]) -> None:
+    missing = [f for f in fragments if f not in text]
+    assert not missing, f"нет фрагментов: {missing}"
+
+
+def test_tdd_impact_contract():
+    _assert_contains(
+        _skill("tdd-impact"),
+        (
+            "allowed-tools: Bash(python3:*)",
+            "sa_state.py init tasks/<KEY> <KEY>",
+            "sa_ids.py next tasks/<KEY>",
+            "sa_validate.py tasks/<KEY>",
+            "sa_state.py record tasks/<KEY> BRD",
+            "sa_state.py set tasks/<KEY> stage impact",
+            "sa_questions.py export tasks/<KEY> PO",
+            "sa-skills:source-reader",
+            "brd-checklist.md",
+            "question-routing.md",
+            "adapters.md",
+            "[BRD]",
+            "SA_SYSTEM_DOCS",
+        ),
+    )
+
+
+def test_tdd_start_contract():
+    _assert_contains(
+        _skill("tdd-start"),
+        (
+            "allowed-tools: Bash(python3:*)",
+            "sa_status.py tasks/<KEY>",
+            "sa_ids.py next tasks/<KEY>",
+            "sa_state.py set tasks/<KEY> template",
+            "sa_template.py version feature",
+            "sa_validate.py tasks/<KEY>",
+            "sa_state.py record tasks/<KEY> impact-map",
+            "sa_state.py set tasks/<KEY> stage start",
+            "sa_questions.py export tasks/<KEY> PO",
+            "question-routing.md",
+            "`feature`",
+            "`integration`",
+            "questions.md",
+            "## Для PO",
+        ),
+    )
+
+
+def test_tdd_clarify_contract():
+    _assert_contains(
+        _skill("tdd-clarify"),
+        (
+            "allowed-tools: Bash(python3:*)",
+            "sa_status.py tasks/<KEY>",
+            "sa_ids.py next tasks/<KEY> D",
+            "sa_validate.py tasks/<KEY>",
+            "sa_state.py record tasks/<KEY> context impact-map",
+            "sa_state.py set tasks/<KEY> stage clarify",
+            "sa_questions.py export tasks/<KEY> PO",
+            "sa_questions.py export tasks/<KEY> SA",
+            "question-routing.md",
+            "*obsolete*",
+            "*open, blocking*",
+            "*answered*",
+            "context.md",
+            "| ID | ← Q | Решение | Кто/где | Дата |",
+            "## Для PO",
+        ),
+    )
+
+
+def test_stage_skills_use_sa_paths():
+    for name in ("tdd-impact", "tdd-start", "tdd-clarify", "tdd-draft"):
+        assert "sa_paths.py" in _skill(name), name
+
+
+def test_stage_skills_read_shared_writing_rules():
+    for name in ("tdd-impact", "tdd-start", "tdd-clarify", "tdd-draft"):
+        assert "shared/rules/artifact-writing.md" in _skill(name), name
+
+
+def test_tdd_start_context_sample_validates(task_dir):
+    import re
+
+    from sa_validate import validate_task
+
+    text = _skill("tdd-start")
+    sample = next(b for b in re.findall(r"```markdown\n(.*?)```", text, re.S) if "## Границы" in b)
+    # Образец использует IM-01..IM-03 и Q-PO-01: из карты фикстуры убираем IM-04,
+    # а вопрос, ссылавшийся на него, перенаправляем на IM-03.
+    impact = task_dir / "impact-map.md"
+    impact.write_text(
+        "".join(l for l in impact.read_text(encoding="utf-8").splitlines(keepends=True) if not l.startswith("| IM-04")),
+        encoding="utf-8",
+    )
+    questions = task_dir / "questions.md"
+    questions.write_text(questions.read_text(encoding="utf-8").replace("[IM-04]", "[IM-03]"), encoding="utf-8")
+    # убираем отступ образца внутри списка скила
+    lines = [l[5:] if l.startswith("     ") else l for l in sample.splitlines()]
+    (task_dir / "context.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    assert validate_task(task_dir) == []
+
+
+PUML_SKILLS = ("puml-c2", "puml-sequence", "puml-activity", "puml-er", "puml-state")
+
+
+def test_puml_skills_contract():
+    import re
+
+    from sa_puml import kind_errors, structural_errors
+
+    for name in PUML_SKILLS:
+        text = _skill(name)
+        _assert_contains(
+            text,
+            (
+                "allowed-tools: Bash(python3:*)",
+                "## Когда применять",
+                "## Каркас",
+                "## Соглашения",
+                "## Чек-лист",
+                "## Проверка",
+                "<плагин>/shared/blocks/diagrams.md",
+                "sa_puml.py check",
+                "карт",
+            ),
+        )
+        sample = re.search(r"```plantuml\n(.*?)```", text, re.S)
+        assert sample, f"{name}: нет каркаса"
+        kind = name.split("-", 1)[1]
+        assert structural_errors(sample.group(1)) + kind_errors(f"x-{kind}.puml", sample.group(1)) == [], name
+        if name != "puml-c2":
+            assert "<color:red>" in text, name
+    c2 = _skill("puml-c2")
+    assert "!includeurl https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml" in c2
+    assert "SystemQueue(kafka" in c2
+    assert 'autonumber "<b>[000]"' in _skill("puml-sequence")
+    assert "[001]" in _skill("puml-activity")
+
+
+def test_tdd_draft_contract():
+    _assert_contains(
+        _skill("tdd-draft"),
+        (
+            "allowed-tools: Bash(python3:*)",
+            "sa_paths.py",
+            "sa_status.py tasks/<KEY>",
+            "sa_draft.py gaps tasks/<KEY>",
+            "sa_draft.py plan tasks/<KEY>",
+            "sa_draft.py assemble tasks/<KEY>",
+            "sa_ids.py next tasks/<KEY>",
+            "sa_validate.py tasks/<KEY>",
+            "sa_state.py record tasks/<KEY> BRD impact-map context questions",
+            "sa_state.py set tasks/<KEY> stage draft",
+            "<плагин>/shared/blocks/diagrams.md",
+            "<плагин>/skills/puml-",
+            "@diagram diagrams/",
+            "⚠ Q-",
+            "‹R-01, IM-02, D-01›",
+            "не создаётся",
+            "@openapi api/",
+            "{{DTO:",
+            "sa-skills:source-reader",
+            "## Текст",
+            "пространство и родительская страница",
+            "правка человека",
+            "draft-publish.md",
+            "adapters.md",
+            "writing-style.md",
+            "<tasks_dir>/<KEY>/draft/",
+        ),
+    )
+
+
+def test_stage_skills_write_absolute_paths():
+    for name in ("tdd-impact", "tdd-start", "tdd-clarify", "tdd-draft"):
+        assert "<tasks_dir>/<KEY>/" in _skill(name), name
