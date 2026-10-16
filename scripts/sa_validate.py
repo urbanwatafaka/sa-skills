@@ -20,8 +20,8 @@ from sa_draft import (
     DIAGRAM_RE,
     DIAGRAM_REF_RE,
     DTO_RE,
+    APPROVALS,
     HEADER_KEYS,
-    LABEL,
     OPENAPI_RE,
     OPENAPI_REF_RE,
     dto_errors,
@@ -161,6 +161,11 @@ def validate_questions(text: str, known: dict) -> tuple[list[str], set[str] | No
         if "BRD" in q.refs and q.audience != "PO":
             errors.append(f"{q.id}: ссылка [BRD] допустима только в вопросах PO")
         errors += [f"{q.id}: «{t}» — не ID и не BRD" for t in q.bad_refs]
+        errors += [
+            f"{q.id}: согласование «{a}» — ожидается {' или '.join(APPROVALS)}" for a in q.approval if a not in APPROVALS
+        ]
+        if q.answer and q.status == "obsolete":
+            errors.append(f"{q.id}: «Ответ в ТЗ» у неактуального вопроса — убери строку или смени статус")
         errors += [f"{q.id}: ссылка на несуществующий {r}" for r in _unknown(q.refs, known)]
         if q.audience == "PO":
             found = list(dict.fromkeys(
@@ -427,8 +432,6 @@ def validate_draft(task_dir: Path, state: dict, known: dict) -> list[str]:
     except ArtifactError as exc:
         return errors + [f"draft.md: {exc}"]
     errors += [f"draft.md: во frontmatter нет ключа {key}" for key in HEADER_KEYS if meta.get(key) in (None, "")]
-    if meta.get("label") not in (None, "", LABEL):
-        errors.append(f"draft.md: label должен быть {LABEL}")
     if meta.get("template") not in (None, "", state.get("template")):
         errors.append(f"draft.md: template {meta['template']} не совпадает с state.json ({state.get('template')})")
     if complete and body.strip() != render_body(task_dir, manifest, str(state.get("task", ""))).strip():

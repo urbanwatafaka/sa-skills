@@ -5,7 +5,7 @@ import urllib.error
 
 import pytest
 
-from sa_fetch import adf_to_text, fetch_confluence, fetch_jira, main, storage_to_text
+from sa_fetch import adf_to_text, fetch_confluence, fetch_jira, fetch_version, main, storage_to_text
 
 
 class FakeResponse:
@@ -77,6 +77,14 @@ def test_confluence():
     assert out == "Заголовок: Страница\nВерсия: 7\n\nТело"
     assert "/rest/api/content/123?expand=body.storage,version" in seen[0].full_url
     assert seen[0].get_header("Authorization") == "Bearer ct"
+
+
+def test_version_only():
+    seen = []
+    page = {"title": "Образец", "version": {"number": 12}}
+    env = {"CONFLUENCE_BASE_URL": "https://c.example.com", "CONFLUENCE_TOKEN": "ct"}
+    assert fetch_version("110167415", env, opener=make_opener(page, seen)) == "110167415\t12\tОбразец"
+    assert seen[0].full_url.endswith("/rest/api/content/110167415?expand=version")
 
 
 def test_missing_env_lists_names(capsys, monkeypatch):

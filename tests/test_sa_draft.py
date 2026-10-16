@@ -24,7 +24,7 @@ def test_assemble(draft_task):
     meta, body = split_frontmatter((draft_task / "draft.md").read_text(encoding="utf-8"))
     assert meta == {
         "status": "черновик", "author": "Иван Петров", "jira": "LKP-DEMO",
-        "label": "ИИ-черновик", "template": "feature@2.0", "assembled": "2026-10-15",
+        "template": "feature@2.0", "assembled": "2026-10-15",
     }
     assert body.startswith("# Запрет собственного промокода в анкете\n\n# BRD\n")
     assert body.index("# BRD") < body.index("# Архитектура и Процесс") < body.index("# Доработки")
@@ -37,8 +37,8 @@ def test_assemble(draft_task):
     assert publish.startswith(
         "# Запрет собственного промокода в анкете\n\n:::expand Оглавление\n{{toc}}\n:::\n\n---\n\n**Статусы**\n\n"
         "| Параметр | Значение |\n|---|---|\n| Статус задачи | в аналитике |\n| Автор документа | Иван Петров |\n"
-        "| Jira ссылка | LKP-DEMO |\n| Ссылка на дизайн | Не требуется |\n\n---\n\n# BRD\n"
     )
+    assert "/browse/LKP-DEMO |\n| Ссылка на дизайн | Не требуется |\n\n---\n\n# BRD\n" in publish
     assert "1. Какой текст показать мерчанту, если он указал собственный промокод?<br/>**Ответ**:" in publish
     assert "‹" not in publish
     sections = load_state(draft_task)["sections"]
@@ -59,6 +59,43 @@ def test_assemble_statuses_from_context(draft_task):
     assert "| Статус задачи | в оценке |" in publish
     assert "| Jira ссылка | https://jira.example/browse/LKP-DEMO |" in publish
     assert "| Ссылка на дизайн | https://figma.example/x |" in publish
+
+
+def test_jira_url_from_key(draft_task, monkeypatch):
+    monkeypatch.delenv("JIRA_BASE_URL", raising=False)
+    assemble(draft_task)
+    publish = (draft_task / "draft-publish.md").read_text(encoding="utf-8")
+    assert "| Jira ссылка | https://jira.tasktracker.help/browse/LKP-DEMO |" in publish
+    monkeypatch.setenv("JIRA_BASE_URL", "https://jira.example/")
+    assemble(draft_task)
+    publish = (draft_task / "draft-publish.md").read_text(encoding="utf-8")
+    assert "| Jira ссылка | https://jira.example/browse/LKP-DEMO |" in publish
+
+
+def test_open_questions_approval_and_answer(draft_task):
+    questions = draft_task / "questions.md"
+    text = questions.read_text(encoding="utf-8")
+    text = text.replace(
+        "  Варианты: а) не пересчитывать; б) пересчитать — *answered*",
+        "  Варианты: а) не пересчитывать; б) пересчитать\n  Ответ в ТЗ: не пересчитывать — *answered*",
+    ).replace(
+        "собственный промокод? — *open, blocking*",
+        "собственный промокод?\n  Согласование: бизнес, архком\n"
+        "  Ответ в ТЗ: предварительно — «Промокод недоступен»; согласования пока не было — *open, blocking*",
+    )
+    questions.write_text(text, encoding="utf-8")
+    assemble(draft_task)
+    publish = (draft_task / "draft-publish.md").read_text(encoding="utf-8")
+    assert (
+        "1. Что делать с вознаграждениями, уже начисленными партнёрам за собственные анкеты?"
+        "<br/>**Ответ**: не пересчитывать\n" in publish
+    )
+    assert (
+        "2. Какой текст показать мерчанту, если он указал собственный промокод?"
+        "<br/>❗**Требует согласования:** Бизнес, Архитектурный комитет"
+        "<br/>**Ответ**: предварительно — «Промокод недоступен»; согласования пока не было\n" in publish
+    )
+    assert "3. Публикует ли lkp-back событие в Kafka при сохранении анкеты?<br/>**Ответ**:\n" in publish
 
 
 def test_assemble_without_title_uses_manifest(draft_task):

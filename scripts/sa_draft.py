@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 from datetime import date
@@ -25,8 +26,9 @@ CODE_REF_RE = re.compile(r"(?<![\w-])(?:code|код):[ \t]*[\w./-]+:\d+")
 API_PREFIXES = ("/api", "/backoffice", "/public", "/internal")
 QUESTION_MARK = ":question:"
 OPEN_QUESTIONS = "# Открытые вопросы"
-LABEL = "ИИ-черновик"
-HEADER_KEYS = ("status", "author", "jira", "label", "template", "assembled")
+HEADER_KEYS = ("status", "author", "jira", "template", "assembled")
+DEFAULT_JIRA_BASE = "https://jira.tasktracker.help"
+APPROVALS = {"бизнес": "Бизнес", "архком": "Архитектурный комитет"}
 PUBLISH_FILE = "draft-publish.md"
 DEFAULT_TASK_STATUS = "в аналитике"
 NO_LINK = "Не требуется"
@@ -152,13 +154,17 @@ def open_questions(task_dir: Path, publish: bool = False) -> str:
     if not path.exists():
         return ""
     body = split_frontmatter(path.read_text(encoding="utf-8"))[1]
-    questions = [q for q in parse_questions(body) if q.status == "open"]
+    questions = [q for q in parse_questions(body) if q.status == "open" or (q.status == "answered" and q.answer)]
     if not questions:
         return ""
     items = []
     for number, q in enumerate(questions, start=1):
         text = q.text if publish else f"**{q.id}** {q.text}"
-        items.append(f"{number}. {text}<br/>**Ответ**:")
+        if q.approval:
+            who = ", ".join(APPROVALS.get(a, a) for a in q.approval)
+            text += f"<br/>❗**Требует согласования:** {who}"
+        answer = f" {q.answer}" if q.answer else ""
+        items.append(f"{number}. {text}<br/>**Ответ**:{answer}")
     return OPEN_QUESTIONS + "\n\n" + "\n".join(items)
 
 
@@ -180,12 +186,20 @@ def render_body(task_dir: Path, manifest: Manifest, task: str, publish: bool = F
     return "\n\n".join(parts) + "\n"
 
 
+def jira_url(task: str) -> str:
+    """Голый URL задачи из ключа: Confluence разворачивает его в виджет."""
+    if not task:
+        return NO_LINK
+    base = (os.environ.get("JIRA_BASE_URL") or DEFAULT_JIRA_BASE).rstrip("/")
+    return f"{base}/browse/{task}"
+
+
 def statuses_table(task_dir: Path, task: str, author: str) -> str:
     ctx = context_meta(task_dir)
     rows = [
         ("Статус задачи", ctx.get("task_status") or DEFAULT_TASK_STATUS),
         ("Автор документа", author),
-        ("Jira ссылка", ctx.get("jira") or task),
+        ("Jira ссылка", ctx.get("jira") or jira_url(task)),
         ("Ссылка на дизайн", ctx.get("design") or NO_LINK),
     ]
     return "| Параметр | Значение |\n|---|---|\n" + "\n".join(f"| {key} | {value} |" for key, value in rows)
@@ -207,7 +221,6 @@ def assemble(task_dir: Path, author: str | None = None, today: date | None = Non
         "status": "черновик",
         "author": author,
         "jira": task,
-        "label": LABEL,
         "template": state["template"],
         "assembled": (today or date.today()).isoformat(),
     }

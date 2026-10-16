@@ -9,7 +9,7 @@ import urllib.parse
 import urllib.request
 from html.parser import HTMLParser
 
-USAGE = "usage: sa_fetch.py jira <KEY> | confluence <page-id>"
+USAGE = "usage: sa_fetch.py jira <KEY> | confluence <page-id> | version <page-id>"
 TIMEOUT = 30
 BLOCK_TAGS = {"p", "div", "br", "h1", "h2", "h3", "h4", "h5", "h6", "li", "ul", "ol", "table", "pre", "blockquote"}
 ADF_BLOCKS = {"paragraph", "heading", "listItem", "codeBlock", "blockquote", "tableRow", "rule"}
@@ -133,11 +133,24 @@ def fetch_confluence(page_id, env, opener=urllib.request.urlopen) -> str:
     return f"Заголовок: {data.get('title', '')}\nВерсия: {version}\n\n{storage_to_text(value)}"
 
 
+def fetch_version(page_id, env, opener=urllib.request.urlopen) -> str:
+    """Только заголовок и номер версии страницы — без тела, для дешёвой проверки эталонов."""
+    _require(env, ["CONFLUENCE_BASE_URL", "CONFLUENCE_TOKEN"])
+    base = env["CONFLUENCE_BASE_URL"].rstrip("/")
+    url = f"{base}/rest/api/content/{urllib.parse.quote(page_id)}?expand=version"
+    data = _get_json(url, {"Authorization": "Bearer " + env["CONFLUENCE_TOKEN"], "Accept": "application/json"}, opener)
+    version = (data.get("version") or {}).get("number", "")
+    return f"{page_id}	{version}	{data.get('title', '')}"
+
+
+FETCHERS = {"jira": fetch_jira, "confluence": fetch_confluence, "version": fetch_version}
+
+
 def main(argv: list) -> int:
-    if len(argv) != 2 or argv[0] not in ("jira", "confluence"):
+    if len(argv) != 2 or argv[0] not in FETCHERS:
         print(USAGE, file=sys.stderr)
         return 2
-    fetch = fetch_jira if argv[0] == "jira" else fetch_confluence
+    fetch = FETCHERS[argv[0]]
     try:
         text = fetch(argv[1], os.environ, opener=urllib.request.urlopen)
     except FetchError as exc:

@@ -36,6 +36,8 @@ class Question:
     text: str
     bad_refs: list[str] = field(default_factory=list)
     details: list[str] = field(default_factory=list)
+    approval: list[str] = field(default_factory=list)
+    answer: str = ""
 
 
 def find_refs(text: str) -> list[str]:
@@ -131,6 +133,8 @@ _Q_START = re.compile(r"^- \*\*(Q-(PO|SA)-\d{2,})\*\*\s*(.*)$")
 _Q_REFS = re.compile(r"^\[([^\]]*)\]\s*(.*)$")
 _Q_STATUS = re.compile(r"—\s*\*(open|answered|obsolete)(, blocking)?\*\s*$", re.M)
 _SECTIONS = {"## Для PO": "PO", "## Для аналитика": "SA"}
+_Q_APPROVAL = re.compile(r"^Согласование:\s*(.*)$")
+_Q_ANSWER = re.compile(r"^Ответ в ТЗ:\s*(.*)$")
 
 
 def parse_questions(body: str) -> list[Question]:
@@ -164,6 +168,14 @@ def parse_questions(body: str) -> list[Question]:
                 else:
                     bad_refs.append(token)
         text = refs_match.group(2) if refs_match else rest
+        details = [d for d in (_Q_STATUS.sub("", line).strip() for line in chunk[1:]) if d]
+        approval: list[str] = []
+        answer = ""
+        for line in details:
+            if m := _Q_APPROVAL.match(line):
+                approval = [t.strip() for t in m.group(1).split(",") if t.strip()]
+            elif m := _Q_ANSWER.match(line):
+                answer = m.group(1).strip()
         questions.append(
             Question(
                 id=qid,
@@ -174,7 +186,9 @@ def parse_questions(body: str) -> list[Question]:
                 blocking=bool(status.group(2)),
                 text=_Q_STATUS.sub("", text).strip(),
                 bad_refs=bad_refs,
-                details=[d for d in (_Q_STATUS.sub("", line).strip() for line in chunk[1:]) if d],
+                details=details,
+                approval=approval,
+                answer=answer,
             )
         )
     return questions

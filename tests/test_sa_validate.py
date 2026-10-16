@@ -366,12 +366,24 @@ def test_draft_stale(draft_task):
 
 
 def test_draft_header(draft_task):
-    _edit(draft_task / "draft.md", "label: ИИ-черновик", "label: готово")
     _edit(draft_task / "draft.md", "author: Иван Петров\n", "")
-    assert validate_task(draft_task) == [
-        "draft.md: во frontmatter нет ключа author",
-        "draft.md: label должен быть ИИ-черновик",
-    ]
+    assert validate_task(draft_task) == ["draft.md: во frontmatter нет ключа author"]
+
+
+def test_question_approval_and_answer(task_dir):
+    _edit(
+        task_dir / "questions.md",
+        "собственный промокод? — *open, blocking*",
+        "собственный промокод?\n  Согласование: бизнес, юристы — *open, blocking*",
+    )
+    _edit(
+        task_dir / "questions.md",
+        "  Где проверить: lkp-back/app/Events — *open*",
+        "  Где проверить: lkp-back/app/Events\n  Ответ в ТЗ: да — *obsolete*",
+    )
+    errors = validate_task(task_dir)
+    assert "questions.md: Q-PO-02: согласование «юристы» — ожидается бизнес или архком" in errors
+    assert "questions.md: Q-SA-01: «Ответ в ТЗ» у неактуального вопроса — убери строку или смени статус" in errors
 
 
 def test_draft_md_required(draft_task):

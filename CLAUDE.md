@@ -16,7 +16,9 @@
 
 ## Откуда правила оформления
 
-Шаблон `feature` (тип 1 — ТЗ на доработку), блоки `shared/blocks/`, `shared/rules/writing-style.md`, скилы `puml-*` и раздел публикации в `shared/access/adapters.md` перенесены из личного скила аналитика `~/.claude/skills/zuyza-write-confluence/SKILL.md` (эталоны Confluence pageId 110167390, 110167415, 110166633). При расхождении источник истины — этот скил и эталонные страницы. Типы документов 2–5 пока не перенесены.
+Шаблон `feature` (тип 1 — ТЗ на доработку), блоки `shared/blocks/`, `shared/rules/writing-style.md`, скилы `puml-*` и раздел публикации в `shared/access/adapters.md` перенесены из личного скила аналитика `~/.claude/skills/zuyza-write-confluence/SKILL.md` (эталоны Confluence pageId 110167390, 110167415, 110166633). При расхождении источник истины — этот скил и эталонные страницы. Плагин собирает только тип 1; типы 2–5 не переносятся.
+
+Сверил блоки с эталоном — запиши его версию в `shared/etalons.md`: по ней `/tdd-draft` проверяет, не устарели ли блоки.
 
 ## Окружение (Windows)
 
