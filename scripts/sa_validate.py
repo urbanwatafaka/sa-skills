@@ -563,10 +563,10 @@ def validate_qa(task_dir: Path) -> list[str]:
         seen.add(case.id)
         name = case.id or f"«{case.title}»"
         for token in case.sources:
-            if token.startswith(("code:", "код:")):
+            if token.startswith(("code:", "код:", "docs:")):
                 continue
             if not any(is_id(kind, token) for kind in ("R", "IM", "D")):
-                errors.append(f"{CASES_FILE}: {name}: Источник «{token}» — не ID R/IM/D и не code:")
+                errors.append(f"{CASES_FILE}: {name}: Источник «{token}» — не ID R/IM/D, не code: и не docs:")
             elif known is not None and token not in known:
                 errors.append(f"{CASES_FILE}: {name}: Источник {token} — нет такой строки в BRD, карте влияния или решениях")
     try:

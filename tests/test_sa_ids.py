@@ -70,3 +70,11 @@ def test_qa_kind_does_not_match_other_prefix(task_dir):
     assert next_ids(task_dir, "Q-QA") == ["Q-QA-05"]
     (qa / "units.md").write_text("| U-03 | x |\n| QU-09 | y |\n", encoding="utf-8")
     assert next_ids(task_dir, "U") == ["U-04"]
+
+
+def test_tc_ids_not_reused_after_manual_delete(task_dir):
+    qa = task_dir / "qa"
+    qa.mkdir()
+    (qa / "cases.md").write_text("### TC-01 a\n", encoding="utf-8")
+    (qa / "state.json").write_text('{"cases": {"TC-12": {"generated": null, "exported": "x"}}}', encoding="utf-8")
+    assert next_ids(task_dir, "TC") == ["TC-13"]

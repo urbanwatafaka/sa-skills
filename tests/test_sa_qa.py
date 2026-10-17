@@ -73,7 +73,7 @@ def test_mark_and_human_edit(qa_cases_task):
     edit_case(qa_cases_task, "TC-02", "Новый шаг")
     assert human_cases(qa_cases_task) == ["TC-02"]
     state = json.loads((qa_cases_task / "qa" / "state.json").read_text(encoding="utf-8"))
-    assert state["cases"]["TC-01"]["exported"] is None and "D-01" in state["rows"]
+    assert state["cases"]["TC-01"]["exported"] is None and "D-01" in state["cases"]["TC-01"]["refs"]
 
 
 def test_mark_selected_and_unknown(qa_cases_task):
@@ -211,3 +211,29 @@ def test_cli_precheck_prints_cases_sha(qa_cases_task, capsys):
     assert main(["precheck", str(qa_cases_task)]) == 0
     first = capsys.readouterr().out.splitlines()[0]
     assert first == f"cases: {file_sha1(qa_cases_task / 'qa' / 'cases.md')}"
+
+
+def test_partial_mark_keeps_other_cases_affected(qa_cases_task):
+    mark(qa_cases_task, "все")
+    change_decision(qa_cases_task, "D-01")
+    mark(qa_cases_task, ["TC-02"])
+    hits = dict(affected(qa_cases_task))
+    assert hits.get("TC-01") == ["D-01"] and "TC-02" not in hits
+
+
+def test_duplicate_tc_ids(qa_cases_task):
+    text = cases_path(qa_cases_task).read_text(encoding="utf-8").replace("### TC-02 ", "### TC-01 ")
+    cases_path(qa_cases_task).write_text(text, encoding="utf-8")
+    assert any(m.startswith("TC-01") and "повтор" in m for m in precheck(qa_cases_task))
+    with pytest.raises(ArtifactError, match="TC-01"):
+        export_csv(qa_cases_task, "PF2-3964")
+
+
+def test_bad_state_json(qa_cases_task, capsys):
+    from sa_status import build_status
+
+    (qa_cases_task / "qa" / "state.json").write_text("[]", encoding="utf-8")
+    assert "QA: qa/ не разбирается" in build_status(qa_cases_task)
+    assert main(["human", str(qa_cases_task)]) == 1
+    (qa_cases_task / "qa" / "state.json").write_text("{", encoding="utf-8")
+    assert main(["human", str(qa_cases_task)]) == 1

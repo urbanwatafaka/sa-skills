@@ -19,6 +19,9 @@ def next_ids(task_dir: Path, kind: str, count: int = 1) -> list[str]:
         raise ArtifactError("количество должно быть не меньше 1")
     path = task_dir / (QA_FILES[kind] if kind in QA_FILES else ARTIFACTS[KINDS[kind]])
     text = path.read_text(encoding="utf-8") if path.exists() else ""
+    state = task_dir / "qa" / "state.json"
+    if kind == "TC" and state.exists():  # кейс, удалённый руками, мог уйти в Allure — его ID не переиспользуем
+        text += state.read_text(encoding="utf-8")
     pattern = re.compile(rf"(?<![\w-]){re.escape(kind)}-(\d{{2,}})\b")
     start = max((int(n) for n in pattern.findall(text)), default=0) + 1
     return [f"{kind}-{n:02d}" for n in range(start, start + count)]

@@ -226,7 +226,7 @@ python3 <плагин>/scripts/sa_state.py record <папка задачи> BRD 
 
 ### state.json
 
-`{"rows": {ID: sha1}, "units": {U: sha1}, "cases": {TC: {"generated": sha1, "exported": sha1 | null}}}`. `generated` не равен хэшу кейса — правка человека: стадии такой кейс не перезаписывают, а кладут предложение в `proposals/`. Править только командами `sa_qa.py mark` и `sa_qa.py export`.
+`{"cases": {TC: {"generated": sha1, "exported": sha1 | null, "refs": {ID: sha1}}}}`. `refs` — снимок строк `R/IM/D` из «Источника» и единиц из «Покрывает» на момент `mark` этого кейса: по нему `affected` находит задетые кейсы. ID кейсов из `cases` не переиспользуются, даже если кейс удалён из `cases.md`. `generated` не равен хэшу кейса — правка человека: стадии такой кейс не перезаписывают, а кладут предложение в `proposals/`. Править только командами `sa_qa.py mark` и `sa_qa.py export`.
 
 ## Проверка
 

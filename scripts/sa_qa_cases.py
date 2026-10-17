@@ -155,12 +155,16 @@ def _vague(text: str) -> list[str]:
 
 def lint_case(case: Case) -> list[str]:
     errors = []
+    if not case.title:
+        errors.append("название: пусто")
     if case.kind not in KINDS:
         errors.append(f"вид: «{case.kind}» — допустимы {', '.join(KINDS)}")
     if case.priority not in PRIORITIES:
         errors.append(f"приоритет: «{case.priority}» — допустимы {', '.join(PRIORITIES)}")
     if not case.covers:
         errors.append("покрывает: пусто — укажи единицы U-xx")
+    if not case.sources:
+        errors.append("источник: пусто — укажи ID строк ТЗ ‹R-xx, IM-xx, D-xx›")
     if not case.description:
         errors.append("описание: пусто")
     if not case.preconditions:

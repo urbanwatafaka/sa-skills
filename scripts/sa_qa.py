@@ -28,11 +28,22 @@ def load_cases(task_dir: Path) -> list[Case]:
     return parse_cases(path.read_text(encoding="utf-8")) if path.exists() else []
 
 
+def cases_list(task_dir: Path) -> list[str]:
+    return [c.id for c in load_cases(task_dir) if c.id]
+
+
+def _duplicates(ids: list[str]) -> list[str]:
+    return sorted({i for i in ids if ids.count(i) > 1})
+
+
 def load_state(task_dir: Path) -> dict:
     path = task_dir / STATE_FILE
-    state = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-    for key in ("rows", "units", "cases"):
-        state.setdefault(key, {})
+    try:
+        state = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    except ValueError as exc:
+        raise ArtifactError(f"{STATE_FILE}: не JSON — {exc}") from exc
+    if not isinstance(state, dict) or not isinstance(state.setdefault("cases", {}), dict):
+        raise ArtifactError(f"{STATE_FILE}: ожидается объект с объектом cases")
     return state
 
 
@@ -46,23 +57,35 @@ def _unit_hash(unit: Unit) -> str:
     return hashlib.sha1(f"{unit.text}|{unit.status == REMOVED}".encode("utf-8")).hexdigest()  # статус человека — не изменение ТЗ
 
 
+def _tz_hashes(task_dir: Path) -> dict[str, str]:
+    """Текущие хэши строк BRD, карты, решений и единиц покрытия."""
+    hashes = row_hashes(task_dir)
+    hashes.update({u.id: _unit_hash(u) for u in load_units(task_dir)})
+    return hashes
+
+
 def _name(case: Case) -> str:
     return case.id or f"«{case.title}»"
 
 
 def mark(task_dir: Path, ids: list[str] | str) -> list[str]:
-    """Записать хэши кейсов как сгенерированные стадией и снимок строк ТЗ и единиц."""
+    """Записать хэши кейсов как сгенерированные стадией и снимок их строк ТЗ и единиц."""
     cases = {c.id: c for c in load_cases(task_dir) if c.id}
     chosen = list(cases) if ids == ALL else list(ids)
     unknown = [i for i in chosen if i not in cases]
     if unknown:
         raise ArtifactError(f"нет кейсов {', '.join(unknown)} в {CASES_FILE}")
+    duplicates = _duplicates(list(cases_list(task_dir)))
+    if duplicates:
+        raise ArtifactError(f"ID повторяются: {', '.join(duplicates)}")
     state = load_state(task_dir)
+    now = _tz_hashes(task_dir)
     for cid in chosen:
+        case = cases[cid]
         entry = state["cases"].setdefault(cid, {"generated": None, "exported": None})
-        entry["generated"] = case_hash(cases[cid])
-    state["rows"] = row_hashes(task_dir)
-    state["units"] = {u.id: _unit_hash(u) for u in load_units(task_dir)}
+        entry["generated"] = case_hash(case)
+        # снимок по кейсу: частичный mark не сбрасывает задетость остальных кейсов
+        entry["refs"] = {ref: now[ref] for ref in dict.fromkeys([*case.sources, *case.covers]) if ref in now}
     save_state(task_dir, state)
     return chosen
 
@@ -108,6 +131,7 @@ def precheck(task_dir: Path) -> list[str]:
             messages.append(f"{uid}: нужно решение — {units[uid].reason or 'причина не указана'}; без кейса")
         else:
             messages.append(f"{uid}: без кейса — «{units[uid].text[:60]}»")
+    messages += [f"{cid}: ID повторяется — дай второму кейсу новый ID" for cid in _duplicates([c.id for c in cases if c.id])]
     for case in cases:
         name = _name(case)
         if not case.id:
@@ -141,6 +165,9 @@ def export_csv(task_dir: Path, key: str) -> Path:
     missing = [_name(c) for c in cases if not c.id]
     if missing:
         raise ArtifactError(f"нет ID TC-xx у кейсов {', '.join(missing)}")
+    duplicates = _duplicates([c.id for c in cases])
+    if duplicates:
+        raise ArtifactError(f"ID повторяются: {', '.join(duplicates)}")
     path = task_dir / CSV_FILE
     path.parent.mkdir(exist_ok=True)
     with path.open("w", encoding="utf-8-sig", newline="") as handle:
@@ -157,15 +184,13 @@ def export_csv(task_dir: Path, key: str) -> Path:
 
 
 def affected(task_dir: Path) -> list[tuple[str, list[str]]]:
-    """Кейсы, задетые изменением строк BRD/карты/решений или единиц покрытия со времени mark."""
-    state = load_state(task_dir)
-    rows_now = row_hashes(task_dir)
-    changed = {rid for rid, sha in state["rows"].items() if rows_now.get(rid) != sha}
-    units_now = {u.id: _unit_hash(u) for u in load_units(task_dir)}
-    changed |= {uid for uid, sha in state["units"].items() if units_now.get(uid) != sha}
+    """Кейсы, чьи строки BRD/карты/решений или единицы покрытия изменились со времени их mark."""
+    state = load_state(task_dir)["cases"]
+    now = _tz_hashes(task_dir)
     result = []
     for case in load_cases(task_dir):
-        hits = list(dict.fromkeys(ref for ref in [*case.sources, *case.covers] if ref in changed))
+        refs = (state.get(case.id) or {}).get("refs") or {}
+        hits = [ref for ref, sha in refs.items() if now.get(ref) != sha]
         if hits:
             result.append((_name(case), hits))
     return result

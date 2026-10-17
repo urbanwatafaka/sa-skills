@@ -611,3 +611,8 @@ def test_validate_qa_source_tokens(qa_cases_task):
     errs = _qa_errors(qa_cases_task)
     assert any("TC-03" in e and "что-то" in e for e in errs)
     assert not any("a.ts" in e for e in errs)
+
+
+def test_validate_qa_docs_source(qa_cases_task):
+    _replace(qa_cases_task / "qa" / "cases.md", "‹IM-04›", "‹IM-04›; docs: payform.cabinet.client/docs/tech.md#API")
+    assert _qa_errors(qa_cases_task) == []

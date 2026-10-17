@@ -147,3 +147,36 @@ def test_load_units_broken(qa_task):
 
 def test_unit_dataclass_defaults():
     assert Unit("U-01", "08-testing/new/1", "т", []).status == ""
+
+
+def test_sync_duplicate_texts_keep_order_after_insert(qa_task):
+    path = qa_task / "draft" / "03-changes.md"
+    dup = "Доступ — право `saleschannels:edit`; мерчант — из токена."
+    text = path.read_text(encoding="utf-8")
+    text = text.replace("   1. Сбой сервиса документов", f"   1. {dup}\n   2. Сбой сервиса документов", 1)
+    path.write_text(text, encoding="utf-8")
+    first = {u.where: u.id for u in sync_units(qa_task)}
+    back = "03-changes/payform.payment.saleschannels/Back/"
+    old_a, old_b = first[back + "1.1"], first[back + "2.1"]
+    text = path.read_text(encoding="utf-8").replace("**1. Описание изменений:**\n\n", "**1. Описание изменений:**\n\n1. Новый метод X. ‹IM-01›\n", 1)
+    path.write_text(text, encoding="utf-8")
+    second = {u.where: u.id for u in sync_units(qa_task)}
+    assert second[back + "2.1"] == old_a and second[back + "3.1"] == old_b
+
+
+def test_extract_skips_non_list_lines(qa_task):
+    brd = qa_task / "draft" / "01-brd.md"
+    brd.write_text(brd.read_text(encoding="utf-8").replace("## Требования к UI\n\n", "## Требования к UI\n\nВводный абзац.\n\n", 1), encoding="utf-8")
+    ch = qa_task / "draft" / "03-changes.md"
+    ch.write_text(
+        ch.read_text(encoding="utf-8").replace(
+            "2. Передача файла в сервис документов",
+            '```json\n{"a": 1}\n```\n2. Передача файла в сервис документов',
+            1,
+        ),
+        encoding="utf-8",
+    )
+    where = [u.where for u in extract_units(qa_task)]
+    assert "01-brd/ui/1" in where
+    assert "03-changes/payform.payment.saleschannels/Back/2.1" in where
+    assert not any("{" in u.text for u in extract_units(qa_task))

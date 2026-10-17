@@ -126,3 +126,8 @@ def test_lint_required_fields():
 def test_lint_kind_priority_expected():
     errs = lint_case(make_case(kind="апи", priority="Срочно", expected=""))
     assert {"вид", "приоритет", "ожидаемый результат"} <= {e.split(":")[0] for e in errs}
+
+
+def test_lint_source_and_title_required():
+    errs = lint_case(make_case(sources=[], title=""))
+    assert {"источник", "название"} <= {e.split(":")[0] for e in errs}

@@ -41,8 +41,12 @@ def _list_items(lines: list[str]) -> list[tuple[str, str]]:
     """Пункты списка любой глубины: (номер позиции «1.2.1», текст); строки-продолжения приклеиваются к пункту."""
     items: list[list[str]] = []
     stack: list[list[int]] = []  # [отступ, номер позиции]
+    fence = False
     for line in lines:
-        if not line.strip():
+        if line.strip().startswith("```"):
+            fence = not fence
+            continue
+        if fence or not line.strip():
             continue
         match = ITEM_RE.match(line)
         if match:
@@ -56,8 +60,7 @@ def _list_items(lines: list[str]) -> list[tuple[str, str]]:
             items.append([".".join(str(n) for _, n in stack), match.group(2)])
         elif items and line[:1].isspace():
             items[-1][1] += " " + line.strip()
-        else:
-            break
+        # строка вне списка (абзац перед списком, текст после блока кода) — пропускаем, список продолжается
     return [(path, text) for path, text in items]
 
 
@@ -182,6 +185,11 @@ def write_units(task_dir: Path, units: list[Unit]) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _container(where: str) -> str:
+    """Место пункта без номера позиции: 03-changes/<сервис>/Back, 01-brd/story-2, 08-testing/new."""
+    return where.rsplit("/", 1)[0]
+
+
 def _group(where: str) -> str:
     return where.split("/", 1)[0]
 
@@ -197,14 +205,22 @@ def sync_units(task_dir: Path) -> list[Unit]:
         match[i] = j
         free.remove(j)
 
-    for same_where in (True, False):
-        for i, unit in enumerate(current):
-            if i in match:
-                continue
-            for j in free:
-                if saved[j].text == unit.text and (not same_where or saved[j].where == unit.where):
-                    take(i, j)
-                    break
+    # одинаковые тексты внутри одного места ТЗ сопоставляем по порядку документа с учётом соседей,
+    # а не по номеру: вставка пункта сдвигает номера, и совпадение по номеру поменяло бы ID местами
+    for container in dict.fromkeys(_container(u.where) for u in current):
+        cur = [i for i, u in enumerate(current) if _container(u.where) == container]
+        old = [j for j in free if _container(saved[j].where) == container]
+        blocks = SequenceMatcher(None, [saved[j].text for j in old], [current[i].text for i in cur], autojunk=False)
+        for block in blocks.get_matching_blocks():
+            for k in range(block.size):
+                take(cur[block.b + k], old[block.a + k])
+    for i, unit in enumerate(current):
+        if i in match:
+            continue
+        for j in free:
+            if saved[j].text == unit.text:
+                take(i, j)
+                break
     pairs = []
     for i, unit in enumerate(current):
         if i in match:
