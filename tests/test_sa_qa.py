@@ -203,3 +203,11 @@ def test_human_unit_status_is_not_tz_change(qa_cases_task):
     assert affected(qa_cases_task) == []
     set_unit_status(qa_cases_task, "U-01", "удал.")
     assert ("TC-01", ["U-01"]) in affected(qa_cases_task)
+
+
+def test_cli_precheck_prints_cases_sha(qa_cases_task, capsys):
+    from sa_state import file_sha1
+
+    assert main(["precheck", str(qa_cases_task)]) == 0
+    first = capsys.readouterr().out.splitlines()[0]
+    assert first == f"cases: {file_sha1(qa_cases_task / 'qa' / 'cases.md')}"

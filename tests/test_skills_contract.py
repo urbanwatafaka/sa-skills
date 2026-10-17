@@ -276,3 +276,67 @@ def test_sa_index_docs_contract():
             "без веток и коммитов",
         ),
     )
+
+
+QA_SKILLS = ("qa-cases", "qa-check", "qa-export", "qa-update")
+
+
+def test_qa_cases_contract():
+    _assert_contains(
+        _skill("qa-cases"),
+        (
+            "allowed-tools: Bash(python3:*)",
+            "sa_qa.py units tasks/<KEY>",
+            "sa_ids.py next tasks/<KEY> TC",
+            "sa-skills:source-reader",
+            "code:",
+            "нужно решение",
+            "qa-cases.md",
+            "sa_qa.py mark tasks/<KEY>",
+            "sa_validate.py tasks/<KEY>",
+            "Q-QA",
+        ),
+    )
+
+
+def test_qa_check_contract():
+    _assert_contains(
+        _skill("qa-check"),
+        (
+            "allowed-tools: Bash(python3:*)",
+            "sa_qa.py precheck tasks/<KEY>",
+            "sa_qa.py coverage tasks/<KEY>",
+            "sa-skills:qa-reviewer",
+            "qa/review.md",
+            "QV-",
+        ),
+    )
+
+
+def test_qa_export_contract():
+    _assert_contains(
+        _skill("qa-export"),
+        ("allowed-tools: Bash(python3:*)", "sa_qa.py preview tasks/<KEY>", "sa_qa.py export tasks/<KEY>", "загружай", "allure-import.csv"),
+    )
+
+
+def test_qa_update_contract():
+    _assert_contains(
+        _skill("qa-update"),
+        (
+            "allowed-tools: Bash(python3:*)",
+            "sa_qa.py affected tasks/<KEY>",
+            "sa_qa.py human tasks/<KEY>",
+            "правка человека",
+            "qa/proposals/",
+            "sa_qa.py mark tasks/<KEY>",
+            "QV-",
+        ),
+    )
+
+
+def test_qa_skills_paths_and_scope():
+    for name in QA_SKILLS:
+        text = _skill(name)
+        assert "sa_paths.py" in text, name
+        assert "<tasks_dir>/<KEY>/qa/" in text, name

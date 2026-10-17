@@ -22,7 +22,7 @@ def _frontmatter(text: str) -> dict[str, str]:
 def test_plugin_manifest():
     data = json.loads((ROOT / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))
     assert data["name"] == "sa-skills"
-    assert data["version"] == "0.4.1"
+    assert data["version"] == "0.5.0"
     assert data["description"]
 
 
@@ -105,3 +105,11 @@ def test_docs_indexer_contract():
         assert fragment in text, fragment
     for name in SCHEMAS:
         assert name in text, name
+
+
+def test_qa_reviewer_contract():
+    text = (ROOT / "agents/qa-reviewer.md").read_text(encoding="utf-8")
+    meta = _frontmatter(text)
+    assert set(t.strip() for t in meta["tools"].split(",")) == {"Read", "Grep", "Glob"}
+    for fragment in ("| Важность | Кейс | Проблема | ← Ссылка | Предложение |", "| QV | Вердикт |", "новичок", "`закрыто`", "`остаётся`"):
+        assert fragment in text, fragment

@@ -12,6 +12,7 @@ from sa_artifacts import ArtifactError, parse_questions
 from sa_draft import row_hashes
 from sa_qa_cases import Case, case_hash, lint_case, parse_cases
 from sa_qa_units import REMOVED, Unit, load_units, sync_units
+from sa_state import file_sha1
 
 CASES_FILE = "qa/cases.md"
 QUESTIONS_FILE = "qa/questions.md"
@@ -184,6 +185,11 @@ def _units_report(task_dir: Path) -> str:
     return "\n".join(lines)
 
 
+def _cases_sha(task_dir: Path) -> str:
+    path = task_dir / CASES_FILE
+    return file_sha1(path) if path.exists() else "—"
+
+
 def _lines(items: list[str], empty: str) -> str:
     return "\n".join(items) if items else empty
 
@@ -204,7 +210,7 @@ SIMPLE = {
     "units": _units_report,
     "human": lambda t: _lines(human_cases(t), "правок человека нет"),
     "coverage": coverage_table,
-    "precheck": lambda t: _lines(precheck(t), "замечаний нет"),
+    "precheck": lambda t: f"cases: {_cases_sha(t)}\n" + _lines(precheck(t), "замечаний нет"),
     "preview": lambda t: "\n".join(f"{group}: {', '.join(ids) or '—'}" for group, ids in export_preview(t).items()),
     "affected": lambda t: _lines([f"{tc}: {', '.join(refs)}" for tc, refs in affected(t)], "задетых кейсов нет"),
 }

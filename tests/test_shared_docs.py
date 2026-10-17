@@ -111,3 +111,24 @@ def test_adapters_no_branch_exception():
     text = (ROOT / "shared/access/adapters.md").read_text(encoding="utf-8")
     assert "отдельную ветку" not in text
     assert "/sa-index-docs" in text
+
+
+def test_qa_cases_rules():
+    text = (ROOT / "shared/rules/qa-cases.md").read_text(encoding="utf-8")
+    for fragment in ("новичок", "Вызвать метод", "Ожидаемый результат", "**Покрывает:**", "**Источник:**", "`High`", "`Medium`", "`Low`"):
+        assert fragment in text, fragment
+
+
+def test_schema_doc_describes_qa():
+    from sa_qa import CSV_HEADER
+    from sa_qa_units import HEADER
+
+    text = (ROOT / "shared/schemas/artifacts.md").read_text(encoding="utf-8")
+    assert "\n## qa/\n" in text
+    for name in ("cases.md", "units.md", "questions.md", "review.md", "allure-import.csv", "proposals/", "state.json"):
+        assert f"`{name}`" in text, name
+    for column in HEADER:
+        assert f"| {column} |" in text, column
+    assert ", ".join(CSV_HEADER) in text
+    for status in ("не поведение", "не тестируется", "нужно решение", "удал."):
+        assert f"`{status}`" in text, status
