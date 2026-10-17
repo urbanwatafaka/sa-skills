@@ -122,3 +122,24 @@ def test_broken_review_does_not_fail_status(draft_task):
     status = build_status(draft_task)
     assert "Ревью: review.md повреждён — перепишет /tdd-check" in status
     assert status.endswith("Следующий шаг: /tdd-check — review.md повреждён, его перепишет /tdd-check")
+
+
+def test_status_qa_line(qa_cases_task):
+    from sa_qa import export_csv, mark
+
+    line = next(l for l in build_status(qa_cases_task).splitlines() if l.startswith("QA:"))
+    assert line.startswith("QA: кейсов 3 (бэкенд 1, фронт 1, регресс 1)")
+    assert "правки человека 3" in line and "выгружено 0, изменено после выгрузки 0" in line
+    mark(qa_cases_task, "все")
+    export_csv(qa_cases_task, "LKP-DEMO")
+    path = qa_cases_task / "qa" / "cases.md"
+    path.write_text(path.read_text(encoding="utf-8").replace("Мерчант с каналом продаж; файл PNG размером 6 МБ.", "Мерчант.", 1), encoding="utf-8")
+    line = next(l for l in build_status(qa_cases_task).splitlines() if l.startswith("QA:"))
+    assert "правки человека 1" in line and "выгружено 3, изменено после выгрузки 1" in line
+    assert "вопросов Q-QA 0" in line and "нужно решение 0" in line
+
+
+def test_status_qa_broken(qa_cases_task):
+    path = qa_cases_task / "qa" / "cases.md"
+    path.write_text(path.read_text(encoding="utf-8").replace("**Шаги:**", "**Ход:**", 1), encoding="utf-8")
+    assert "QA: qa/ не разбирается" in build_status(qa_cases_task)

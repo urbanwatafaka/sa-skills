@@ -543,3 +543,71 @@ def test_review_dangling_ref_only_checked_for_open(draft_task):
     assert validate_task(draft_task) == []
     write_review(draft_task, ["| RV-01 | важно | шапка | старое | R-09 | x | открыто |"])
     assert "review.md: RV-01: ссылка на несуществующий R-09" in validate_task(draft_task)
+
+
+def _qa_errors(task):
+    from sa_validate import validate_task
+
+    return [e for e in validate_task(task) if e.startswith("qa/")]
+
+
+def _replace(path, old, new):
+    text = path.read_text(encoding="utf-8")
+    assert old in text
+    path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+
+def test_no_qa_folder_unchanged(task_dir):
+    from sa_status import build_status
+    from sa_validate import validate_qa
+
+    assert validate_qa(task_dir) == [] and _qa_errors(task_dir) == []
+    assert "QA:" not in build_status(task_dir)
+
+
+def test_validate_qa_clean(qa_cases_task):
+    assert _qa_errors(qa_cases_task) == []
+
+
+def test_validate_qa_errors(qa_cases_task):
+    from sa_validate import validate_task
+
+    _replace(qa_cases_task / "qa" / "cases.md", "‹R-01, IM-02, D-01›", "‹R-99, IM-02, D-01›")
+    units = qa_cases_task / "qa" / "units.md"
+    lines = []
+    for line in units.read_text(encoding="utf-8").splitlines():
+        if line.startswith("| U-02 |"):
+            cells = line.strip("|").split("|")
+            cells[3], cells[4] = " не тестируется ", " "
+            line = "|" + "|".join(cells) + "|"
+        lines.append(line)
+    units.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    errs = validate_task(qa_cases_task)
+    assert any("TC-01" in e and "R-99" in e for e in errs)
+    assert any("U-02" in e and "причин" in e for e in errs)
+
+
+def test_validate_qa_duplicates_and_bad_status(qa_cases_task):
+    _replace(qa_cases_task / "qa" / "cases.md", "### TC-02 ", "### TC-01 ")
+    _replace(qa_cases_task / "qa" / "units.md", "| U-03 |", "| U-02 |")
+    errs = _qa_errors(qa_cases_task)
+    assert any("TC-01" in e and "повтор" in e for e in errs)
+    assert any("U-02" in e and "повтор" in e for e in errs)
+
+
+def test_validate_qa_broken_files(qa_cases_task):
+    _replace(qa_cases_task / "qa" / "cases.md", "**Ожидаемый результат:**", "**Итог:**")
+    (qa_cases_task / "qa" / "questions.md").write_text(
+        "# Вопросы QA\n\n## Для PO\n- **Q-QA-01** [D-01] Код? — *open*\n- **Q-PO-05** [D-01] Чужой? — *open*\n", encoding="utf-8"
+    )
+    errs = _qa_errors(qa_cases_task)
+    assert any(e.startswith("qa/cases.md") and "TC-01" in e for e in errs)
+    assert any("Q-QA-01" in e and "Для аналитика" in e for e in errs)
+    assert any("Q-PO-05" in e for e in errs)
+
+
+def test_validate_qa_source_tokens(qa_cases_task):
+    _replace(qa_cases_task / "qa" / "cases.md", "‹IM-04›", "‹IM-04›; code: payform.cabinet.client/src/a.ts:12; что-то")
+    errs = _qa_errors(qa_cases_task)
+    assert any("TC-03" in e and "что-то" in e for e in errs)
+    assert not any("a.ts" in e for e in errs)

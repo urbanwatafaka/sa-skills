@@ -56,6 +56,36 @@ def _unresolved_scope(context_path: Path) -> list[str]:
     return ids
 
 
+def qa_line(task_dir: Path) -> str | None:
+    """Строка QA для статуса; None — у задачи нет qa/."""
+    from sa_qa import QUESTIONS_FILE, coverage, human_cases, load_cases, load_state
+    from sa_qa_cases import case_hash
+    from sa_qa_units import load_units
+
+    if not (task_dir / "qa").is_dir():
+        return None
+    try:
+        cases = load_cases(task_dir)
+        units = load_units(task_dir)
+        uncovered = sum(1 for _, status, tcs in coverage(task_dir) if status == "" and not tcs)
+        human = len(human_cases(task_dir))
+        exported = load_state(task_dir)["cases"]
+        questions_path = task_dir / QUESTIONS_FILE
+        questions = parse_questions(questions_path.read_text(encoding="utf-8")) if questions_path.exists() else []
+    except (ArtifactError, ValueError) as exc:
+        return f"QA: qa/ не разбирается — {exc}"
+    kinds = {kind: sum(c.kind == kind for c in cases) for kind in ("бэкенд", "фронт", "регресс")}
+    sent = [c for c in cases if (exported.get(c.id) or {}).get("exported")]
+    changed = sum(exported[c.id]["exported"] != case_hash(c) for c in sent)
+    decide = sum(u.status == "нужно решение" for u in units)
+    open_q = sum(q.status == "open" for q in questions)
+    return (
+        f"QA: кейсов {len(cases)} (бэкенд {kinds['бэкенд']}, фронт {kinds['фронт']}, регресс {kinds['регресс']}) · "
+        f"непокрыто {uncovered} · нужно решение {decide} · вопросов Q-QA {open_q} · правки человека {human} · "
+        f"выгружено {len(sent)}, изменено после выгрузки {changed}"
+    )
+
+
 def build_status(task_dir: Path) -> str:
     state = load_state(task_dir)
     lines = [
@@ -105,6 +135,10 @@ def build_status(task_dir: Path) -> str:
     elif review:
         line = f"Ревью: открыто {review['open']} (критично {review['critical']}), принято {review['accepted']}"
         lines.append(line + (" · устарело — черновик менялся после ревью" if review["stale"] else ""))
+
+    qa = qa_line(task_dir)
+    if qa:
+        lines.append(qa)
 
     stale = stale_inputs(task_dir, state)
     lines.append(f"Устаревшие входы: {', '.join(stale) if stale else 'нет'}")

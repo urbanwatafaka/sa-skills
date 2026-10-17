@@ -30,6 +30,7 @@ from sa_draft import (
     placeholders,
     item_refs,
     render_body,
+    row_hashes,
     top_items,
     without_open_questions,
     section_path,
@@ -534,6 +535,73 @@ def validate_review(text: str, known: dict, task_dir: Path, state: dict) -> tupl
     return errors, ids
 
 
+QA_NEEDS_REASON = ("не поведение", "не тестируется", "нужно решение")
+
+
+def validate_qa(task_dir: Path) -> list[str]:
+    """Артефакты QA в qa/: формат кейсов, единиц и вопросов, дубли ID, Источник на строки ТЗ, причины статусов."""
+    from sa_qa import CASES_FILE, QUESTIONS_FILE, STATE_FILE, load_cases, load_state
+    from sa_qa_units import STATUSES as UNIT_STATUSES
+    from sa_qa_units import UNITS_FILE, load_units
+
+    if not (task_dir / "qa").is_dir():
+        return []
+    errors: list[str] = []
+    try:
+        cases = load_cases(task_dir)
+    except ArtifactError as exc:
+        errors.append(str(exc))
+        cases = []
+    try:
+        known = set(row_hashes(task_dir))
+    except ArtifactError:
+        known = None
+    seen: set[str] = set()
+    for case in cases:
+        if case.id in seen:
+            errors.append(f"{CASES_FILE}: {case.id} повторяется")
+        seen.add(case.id)
+        name = case.id or f"«{case.title}»"
+        for token in case.sources:
+            if token.startswith(("code:", "код:")):
+                continue
+            if not any(is_id(kind, token) for kind in ("R", "IM", "D")):
+                errors.append(f"{CASES_FILE}: {name}: Источник «{token}» — не ID R/IM/D и не code:")
+            elif known is not None and token not in known:
+                errors.append(f"{CASES_FILE}: {name}: Источник {token} — нет такой строки в BRD, карте влияния или решениях")
+    try:
+        units = load_units(task_dir)
+    except ArtifactError as exc:
+        errors.append(f"{UNITS_FILE}: {exc}")
+        units = []
+    seen = set()
+    for unit in units:
+        if not is_id("U", unit.id):
+            errors.append(f"{UNITS_FILE}: «{unit.id}» — не ID U-xx")
+        elif unit.id in seen:
+            errors.append(f"{UNITS_FILE}: {unit.id} повторяется")
+        seen.add(unit.id)
+        if unit.status not in UNIT_STATUSES:
+            errors.append(f"{UNITS_FILE}: {unit.id}: статус «{unit.status}» — допустимы пусто, {', '.join(UNIT_STATUSES[1:])}")
+        elif unit.status in QA_NEEDS_REASON and not unit.reason:
+            errors.append(f"{UNITS_FILE}: {unit.id}: статус «{unit.status}» без причины")
+    questions_path = task_dir / QUESTIONS_FILE
+    if questions_path.exists():
+        try:
+            for q in parse_questions(questions_path.read_text(encoding="utf-8")):
+                if q.audience != "QA":
+                    errors.append(f"{QUESTIONS_FILE}: {q.id} — здесь только вопросы Q-QA-xx")
+                elif q.section != "SA":
+                    errors.append(f"{QUESTIONS_FILE}: {q.id} — должен лежать в секции «## Для аналитика»")
+        except ArtifactError as exc:
+            errors.append(f"{QUESTIONS_FILE}: {exc}")
+    try:
+        load_state(task_dir)
+    except ValueError as exc:
+        errors.append(f"{STATE_FILE}: не разбирается — {exc}")
+    return errors
+
+
 def validate_task(task_dir: Path) -> list[str]:
     try:
         state = load_state(task_dir)
@@ -554,6 +622,7 @@ def validate_task(task_dir: Path) -> list[str]:
         _run(task_dir, "review", lambda t: validate_review(t, known, task_dir, state), errors)
     elif state.get("stage") in ("check", "done"):
         errors.append("review.md: нет файла — запусти /tdd-check")
+    errors += validate_qa(task_dir)
     return errors
 
 
