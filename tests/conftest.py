@@ -81,3 +81,15 @@ def index_repos(tmp_path: Path):
         return repo
 
     return make
+
+
+QA_FIXTURE = Path(__file__).parent / "fixtures" / "qa"
+
+
+@pytest.fixture
+def qa_task(task_dir: Path) -> Path:
+    draft = task_dir / "draft"
+    draft.mkdir(exist_ok=True)
+    for name in ("01-brd.md", "03-changes.md", "08-testing.md"):
+        shutil.copy(QA_FIXTURE / name, draft / name)
+    return task_dir
