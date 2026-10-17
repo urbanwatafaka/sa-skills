@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-REF_RE = re.compile(r"\bQ-(?:PO|SA)-\d{2,}\b|\b(?:R|IM|D|RV)-\d{2,}\b")
+REF_RE = re.compile(r"\bQ-(?:PO|SA|QA)-\d{2,}\b|\b(?:R|IM|D|RV|TC|U|QV)-\d{2,}\b")
 # Путь с префиксом шлюза: после префикса раздела идёт ещё один префикс раздела или версия —
 # /api/backoffice/v1/orders. Метод в ТЗ пишется так, как объявлен в сервисе: /backoffice/orders.
 GATEWAY_PATH_RE = re.compile(r"(?<![\w/])/(?:api|backoffice|public|internal)/(?:api|backoffice|public|internal|v\d+)(?=/|\b)")
@@ -12,9 +12,12 @@ GATEWAY_PATH_RE = re.compile(r"(?<![\w/])/(?:api|backoffice|public|internal)/(?:
 ID_PATTERNS = {
     "R": re.compile(r"R-\d{2,}"),
     "IM": re.compile(r"IM-\d{2,}"),
-    "Q": re.compile(r"Q-(?:PO|SA)-\d{2,}"),
+    "Q": re.compile(r"Q-(?:PO|SA|QA)-\d{2,}"),
     "D": re.compile(r"D-\d{2,}"),
     "RV": re.compile(r"RV-\d{2,}"),
+    "TC": re.compile(r"TC-\d{2,}"),
+    "U": re.compile(r"U-\d{2,}"),
+    "QV": re.compile(r"QV-\d{2,}"),
 }
 
 

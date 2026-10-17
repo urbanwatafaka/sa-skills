@@ -134,3 +134,14 @@ def test_parse_questions_keeps_details():
     qs = parse_questions(body)
     assert qs[0].details == ["Варианты: а) да; б) нет"]
     assert qs[1].details == []
+
+
+def test_find_refs_q_qa():
+    assert find_refs("[Q-QA-03] и R-01") == ["Q-QA-03", "R-01"]
+
+
+def test_qa_id_patterns():
+    assert find_refs("TC-01, U-02, QV-03, Q-PO-01") == ["TC-01", "U-02", "QV-03", "Q-PO-01"]
+    assert is_id("Q", "Q-QA-01") and is_id("Q", "Q-PO-01")
+    assert is_id("TC", "TC-12") and is_id("U", "U-01") and is_id("QV", "QV-07")
+    assert ref_prefix("Q-QA-01") == "Q" and ref_prefix("TC-01") == "TC"

@@ -1,4 +1,4 @@
-"""Следующий свободный ID в задаче: R, IM, Q-PO, Q-SA, D, RV."""
+"""Следующий свободный ID в задаче: R, IM, Q-PO, Q-SA, D, RV и QA — TC, U, Q-QA, QV."""
 from __future__ import annotations
 
 import re
@@ -9,21 +9,22 @@ from sa_artifacts import ArtifactError
 from sa_state import ARTIFACTS
 
 KINDS = {"R": "BRD", "IM": "impact-map", "Q-PO": "questions", "Q-SA": "questions", "D": "decisions", "RV": "review"}
+QA_FILES = {"TC": "qa/cases.md", "U": "qa/units.md", "Q-QA": "qa/questions.md", "QV": "qa/review.md"}
 
 
 def next_ids(task_dir: Path, kind: str, count: int = 1) -> list[str]:
-    if kind not in KINDS:
-        raise ArtifactError(f"неизвестный вид ID {kind}; допустимы: {', '.join(KINDS)}")
+    if kind not in KINDS and kind not in QA_FILES:
+        raise ArtifactError(f"неизвестный вид ID {kind}; допустимы: {', '.join([*KINDS, *QA_FILES])}")
     if count < 1:
         raise ArtifactError("количество должно быть не меньше 1")
-    path = task_dir / ARTIFACTS[KINDS[kind]]
+    path = task_dir / (QA_FILES[kind] if kind in QA_FILES else ARTIFACTS[KINDS[kind]])
     text = path.read_text(encoding="utf-8") if path.exists() else ""
     pattern = re.compile(rf"(?<![\w-]){re.escape(kind)}-(\d{{2,}})\b")
     start = max((int(n) for n in pattern.findall(text)), default=0) + 1
     return [f"{kind}-{n:02d}" for n in range(start, start + count)]
 
 
-USAGE = "использование: sa_ids.py next <папка задачи> <вид: R|IM|Q-PO|Q-SA|D|RV> [количество]"
+USAGE = "использование: sa_ids.py next <папка задачи> <вид: R|IM|Q-PO|Q-SA|D|RV|TC|U|Q-QA|QV> [количество]"
 
 
 def main(argv: list[str]) -> int:
