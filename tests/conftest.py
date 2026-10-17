@@ -93,3 +93,12 @@ def qa_task(task_dir: Path) -> Path:
     for name in ("01-brd.md", "03-changes.md", "08-testing.md"):
         shutil.copy(QA_FIXTURE / name, draft / name)
     return task_dir
+
+
+@pytest.fixture
+def qa_cases_task(qa_task: Path) -> Path:
+    from sa_qa_units import sync_units
+
+    sync_units(qa_task)
+    shutil.copy(QA_FIXTURE / "cases.md", qa_task / "qa" / "cases.md")
+    return qa_task

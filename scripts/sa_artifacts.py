@@ -135,7 +135,7 @@ def find_table(tables: list[Table], required: list[str]) -> Table | None:
     return None
 
 
-_Q_START = re.compile(r"^- \*\*(Q-(PO|SA)-\d{2,})\*\*\s*(.*)$")
+_Q_START = re.compile(r"^- \*\*(Q-(PO|SA|QA)-\d{2,})\*\*\s*(.*)$")
 _Q_REFS = re.compile(r"^\[([^\]]*)\]\s*(.*)$")
 _Q_STATUS = re.compile(r"—\s*\*(open|answered|obsolete)(, blocking)?\*\s*$", re.M)
 _SECTIONS = {"## Для PO": "PO", "## Для аналитика": "SA"}
