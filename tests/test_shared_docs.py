@@ -139,3 +139,10 @@ def test_qa_rules_step_results():
     assert "### Несколько случаев в одном кейсе" in rules and "   - Результат:" in rules
     assert "- Результат:" in (ROOT / "agents/qa-reviewer.md").read_text(encoding="utf-8")
     assert "- Результат:" in (ROOT / "skills/qa-cases/SKILL.md").read_text(encoding="utf-8")
+
+
+def test_qa_rules_unused_functionality():
+    rules = (ROOT / "shared/rules/qa-cases.md").read_text(encoding="utf-8")
+    assert "### Неиспользуемый функционал" in rules and "функционал не используется" in rules
+    assert "функционал не используется" in (ROOT / "skills/qa-cases/SKILL.md").read_text(encoding="utf-8")
+    assert "Неиспользуемый функционал" in (ROOT / "agents/qa-reviewer.md").read_text(encoding="utf-8")
