@@ -17,7 +17,7 @@
 | Источник | Формат | Пример |
 |---|---|---|
 | Код | `code: <репо>/<путь>:<строка>` | `code: lkp-back/app/Rules/Promocode.php:40` |
-| Индекс /docs | `docs: <репо>/docs/<файл>#<раздел>` | `docs: lkp-front/docs/tech.md#promocode` |
+| Индекс /docs | `docs: <репо>/docs/<файл>#<раздел>` | `docs: lkp-front/docs/sa-index/tech.md#promocode` |
 | Confluence | `confluence: <id страницы>#<раздел>` | `confluence: 123456#Доступы` |
 | Jira | `jira: <KEY>` | `jira: LKP-4155` |
 | BRD | `BRD R-xx` | `BRD R-01` |

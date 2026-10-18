@@ -27,7 +27,7 @@
 | `puml-c2`, `puml-sequence`, `puml-activity`, `puml-er`, `puml-state` | Диаграммы PlantUML для ТЗ, вызываются из `/tdd-draft` или сами | готово |
 | `/tdd-check [KEY] [--code]` | Независимое ревью черновика: review.md, матрица покрытия | готово |
 | `/tdd-update [KEY] [RV-xx…]` | Точечное обновление черновика по решениям и замечаниям | готово |
-| `/sa-index-docs [сервис\|all] [--full]` | Индекс `docs/` по коду сервисов и глобальный индекс системы | готово |
+| `/sa-index-docs [сервис\|all] [--full]` | Индекс `docs/sa-index/` по коду сервисов и глобальный индекс системы | готово |
 | `/qa-cases [KEY]` | Ручные тест-кейсы из готового ТЗ: бэкенд, фронт, регресс, единицы покрытия `qa/units.md` | готово |
 | `/qa-check [KEY]` | Проверка кейсов: покрытие, формулировки, ревьюер `qa-reviewer`, `qa/review.md` | готово |
 | `/qa-export [KEY]` | Выгрузка в Allure TestOps после «загружай»: пока CSV `qa/allure-import.csv` | готово |
@@ -111,7 +111,7 @@ python3 <repo>/tests/fixtures/e2e/index-repos/make_repos.py /tmp/sa-e2e-index/re
 SA_REPOS_ROOT=/tmp/sa-e2e-index/repos claude --plugin-dir <repo> --model sonnet --allowedTools "Bash(python3:*) Read Write Edit Grep Glob Agent" -p "/sa-index-docs shop-api"
 ```
 
-Ожидается: после первого запуска `sa_index.py check` даёт `OK` для трёх сервисов, в `repos/system-docs/docs/system_tech.md` есть `POST /api/orders` с потребителем `shop-front` и `Kafka: orders.created` с `shop-legacy`; второй запуск идёт в режиме `incremental` и добавляет в `shop-api/docs/tech.md` строку `DELETE /api/orders/{id}`.
+Ожидается: после первого запуска `sa_index.py check` даёт `OK` для трёх сервисов, в `repos/system-docs/docs/system_tech.md` есть `POST /api/orders` с потребителем `shop-front` и `Kafka: orders.created` с `shop-legacy`; второй запуск идёт в режиме `incremental` и добавляет в `shop-api/docs/sa-index/tech.md` строку `DELETE /api/orders/{id}`.
 
 Синтаксис диаграмм проверяется через `plantuml` в PATH или Docker-образ `plantuml/plantuml` (`docker pull plantuml/plantuml`); без них — только структура.
 

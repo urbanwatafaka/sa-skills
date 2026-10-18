@@ -271,7 +271,7 @@ def test_sa_index_docs_contract():
             "--full",
             "правка человека",
             "split",
-            "<repos_root>/<сервис>/docs/",
+            "<repos_root>/<сервис>/docs/sa-index/",
             "<плагин>/shared/index/docs-schema.md",
             "без веток и коммитов",
         ),

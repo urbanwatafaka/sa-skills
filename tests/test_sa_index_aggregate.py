@@ -47,7 +47,7 @@ def test_aggregate_builds_global_files(index_repos, tmp_path):
 
 def test_aggregate_marks_unmatched_and_stamps(index_repos, tmp_path):
     root = _all(index_repos)
-    tech_md = root / "shop-front" / "docs" / "tech.md"
+    tech_md = root / "shop-front" / "docs" / "sa-index" / "tech.md"
     tech_md.write_text(tech_md.read_text(encoding="utf-8").replace(
         "| shop-api | GET /api/orders/${id} |", "| ext-crm | GET /api/orders/${id} |"), encoding="utf-8")
     stamp(root / "shop-api", today=TODAY)
@@ -63,11 +63,11 @@ def test_aggregate_marks_unmatched_and_stamps(index_repos, tmp_path):
 
 def test_aggregate_skips_broken_and_missing_docs(index_repos, tmp_path):
     root = _all(index_repos)
-    (root / "shop-legacy" / "docs" / "tech.md").write_text("# shop-legacy\n", encoding="utf-8")
+    (root / "shop-legacy" / "docs" / "sa-index" / "tech.md").write_text("# shop-legacy\n", encoding="utf-8")
     (root / "shop-empty").mkdir()
     warnings, refused = aggregate(root, tmp_path / "idx", SERVICES + ["shop-empty"], today=TODAY)
     assert refused == []
-    assert any(w.startswith("shop-legacy: docs/tech.md: нет раздела") for w in warnings)
+    assert any(w.startswith("shop-legacy: docs/sa-index/tech.md: нет раздела") for w in warnings)
     assert "| shop-empty | — | нет |" in (tmp_path / "idx" / "AGENTS.md").read_text(encoding="utf-8")
 
 
@@ -113,7 +113,7 @@ def test_system_tech_keeps_unclear_direction_messages():
 
 
 def _front_unknown_target(root):
-    tech_md = root / "shop-front" / "docs" / "tech.md"
+    tech_md = root / "shop-front" / "docs" / "sa-index" / "tech.md"
     tech_md.write_text(tech_md.read_text(encoding="utf-8").replace(
         "| shop-api | ", "| ? бэкенд /api | "), encoding="utf-8")
 
@@ -131,7 +131,7 @@ def test_unknown_target_matches_single_provider(index_repos, tmp_path):
 def test_unknown_target_with_two_providers_stays_unmatched(index_repos, tmp_path):
     root = _all(index_repos)
     _front_unknown_target(root)
-    legacy = root / "shop-legacy" / "docs" / "tech.md"
+    legacy = root / "shop-legacy" / "docs" / "sa-index" / "tech.md"
     text = legacy.read_text(encoding="utf-8")
     row = "| POST | /invoices.php | Создание счёта | invoices.php:3 |"
     assert row in text

@@ -8,7 +8,7 @@ SERVICES = ("shop-api", "shop-legacy", "shop-front")
 
 
 def _edit(repo, name, old, new):
-    path = repo / "docs" / name
+    path = repo / "docs" / "sa-index" / name
     text = path.read_text(encoding="utf-8")
     assert old in text
     path.write_text(text.replace(old, new), encoding="utf-8")
@@ -77,8 +77,8 @@ def test_check_direction(index_repos):
 
 def test_check_missing_files_and_only_named(index_repos):
     repo = index_repos("shop-api")
-    (repo / "docs" / "DB.md").unlink()
-    assert any("нет файла docs/DB.md" in e for e in check_repo(repo))
+    (repo / "docs" / "sa-index" / "DB.md").unlink()
+    assert any("нет файла docs/sa-index/DB.md" in e for e in check_repo(repo))
     assert check_repo(repo, ["tech.md", "bctc.md"]) == []
 
 
@@ -127,6 +127,14 @@ def test_survey_skips_vendor_and_docs(index_repos):
     assert survey(repo)["sources"] == 5
 
 
+def test_developer_docs_outside_index_ignored(index_repos):
+    repo = index_repos("shop-api", docs=False, init=False)
+    (repo / "docs").mkdir()
+    (repo / "docs" / "tech.md").write_text("# Техническое взаимодействие\n", encoding="utf-8")
+    assert survey(repo)["docs"] == {"tech.md": "нет", "DB.md": "нет", "bctc.md": "нет"}
+    assert any("нет файла docs/sa-index/tech.md" in e for e in check_repo(repo))
+
+
 def test_survey_full_without_stamp_marks_existing_docs_human(index_repos):
     result = survey(index_repos("shop-api"))
     assert result["mode"] == "full"
@@ -146,24 +154,24 @@ def test_survey_non_git_repo(index_repos):
 def test_stamp_then_incremental_and_human_edit(index_repos):
     repo = index_repos("shop-api")
     assert stamp(repo, today=date(2026, 10, 16)) == []
-    data = json.loads((repo / "docs" / STAMP_FILE).read_text(encoding="utf-8"))
+    data = json.loads((repo / "docs" / "sa-index" / STAMP_FILE).read_text(encoding="utf-8"))
     assert data["sha"] == git(repo, "rev-parse", "HEAD").strip()
     assert data["indexed"] == "2026-10-16"
-    assert data["plugin"] == "0.5.3"
+    assert data["plugin"] == "0.5.4"
     assert set(data["files"]) == {"tech.md", "DB.md", "bctc.md"}
     result = survey(repo)
     assert result["mode"] == "incremental"
     assert result["docs"]["tech.md"] == "есть"
-    with (repo / "docs" / "tech.md").open("a", encoding="utf-8") as handle:
+    with (repo / "docs" / "sa-index" / "tech.md").open("a", encoding="utf-8") as handle:
         handle.write("\n")
     assert survey(repo)["docs"]["tech.md"] == "правка человека"
 
 
 def test_stamp_refuses_invalid_docs(index_repos):
     repo = index_repos("shop-api")
-    (repo / "docs" / "DB.md").unlink()
-    assert stamp(repo) == ["нет файла docs/DB.md"]
-    assert not (repo / "docs" / STAMP_FILE).exists()
+    (repo / "docs" / "sa-index" / "DB.md").unlink()
+    assert stamp(repo) == ["нет файла docs/sa-index/DB.md"]
+    assert not (repo / "docs" / "sa-index" / STAMP_FILE).exists()
 
 
 def test_changed_lists_files_and_rows(index_repos):
@@ -188,7 +196,7 @@ def test_changed_lists_files_and_rows(index_repos):
 def test_changed_full_when_sha_unknown(index_repos):
     repo = index_repos("shop-api")
     stamp(repo)
-    path = repo / "docs" / STAMP_FILE
+    path = repo / "docs" / "sa-index" / STAMP_FILE
     data = json.loads(path.read_text(encoding="utf-8"))
     data["sha"] = "0" * 40
     path.write_text(json.dumps(data), encoding="utf-8")
@@ -234,7 +242,7 @@ def test_detect_stack_dotnet_in_nested_project(tmp_path):
 def test_changed_reports_invalid_docs(index_repos):
     repo = index_repos("shop-api")
     stamp(repo)
-    (repo / "docs" / "DB.md").write_text("мусор\n", encoding="utf-8")
+    (repo / "docs" / "sa-index" / "DB.md").write_text("мусор\n", encoding="utf-8")
     result = changed(repo)
     assert result["invalid"] == ["DB.md"]
     assert "invalid: DB.md (не по схеме — полный проход)" in format_changed(result)

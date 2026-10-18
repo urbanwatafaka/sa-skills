@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Индекс docs/ сервиса: схемы таблиц, проверка, карта репозитория, изменённые файлы, отметка индексации."""
+"""Индекс docs/sa-index/ сервиса: схемы таблиц, проверка, карта репозитория, изменённые файлы, отметка индексации."""
 from __future__ import annotations
 
 import hashlib
@@ -14,7 +14,8 @@ from pathlib import Path
 from sa_artifacts import ArtifactError, parse_tables
 from sa_state import _plugin_version, write_atomic
 
-DOCS = "docs"
+DOCS_ROOT = "docs"
+DOCS = f"{DOCS_ROOT}/sa-index"  # своя папка: остальные файлы docs/ — документация разработчиков
 STAMP_FILE = ".sa-index.json"
 SCHEMAS = {
     "tech.md": {
@@ -157,7 +158,7 @@ def _git(repo: Path, *args: str) -> str | None:
 
 
 def _skipped(rel: Path) -> bool:
-    return (bool(rel.parts) and rel.parts[0] == DOCS) or any(p in EXCLUDED_DIRS for p in rel.parts)
+    return (bool(rel.parts) and rel.parts[0] == DOCS_ROOT) or any(p in EXCLUDED_DIRS for p in rel.parts)
 
 
 def _walk(repo: Path):

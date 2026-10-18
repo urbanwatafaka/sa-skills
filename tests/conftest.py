@@ -73,7 +73,7 @@ def index_repos(tmp_path: Path):
         repo = root / name
         shutil.copytree(INDEX_REPOS / name, repo)
         if docs:
-            shutil.copytree(INDEX_DOCS / name / "docs", repo / "docs")
+            shutil.copytree(INDEX_DOCS / name / "docs", repo / "docs" / "sa-index")
         if init:
             git(repo, "init", "-q")
             git(repo, "add", "-A")
