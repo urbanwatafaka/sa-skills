@@ -131,3 +131,30 @@ def test_lint_kind_priority_expected():
 def test_lint_source_and_title_required():
     errs = lint_case(make_case(sources=[], title=""))
     assert {"источник", "название"} <= {e.split(":")[0] for e in errs}
+
+
+def test_heading_inside_fence_does_not_split_case():
+    text = FIXTURE.read_text(encoding="utf-8").replace('   {"merchantId"', '   ### не заголовок\n   {"merchantId"', 1)
+    text = text.replace("   ### не заголовок", "### не заголовок", 1)
+    cases = parse_cases(text)
+    assert [c.id for c in cases] == ["TC-01", "TC-02", "TC-03"]
+    assert "### не заголовок" in cases[0].steps[0]
+
+
+@pytest.mark.parametrize(
+    "old, new",
+    [
+        ("**Ожидаемый результат:** Появляется", "**Ожидаемый результат**: Появляется"),
+        ("- **Приоритет:** High\n- **Покрывает:** U-03", "- **Приоритет**: High\n- **Покрывает:** U-03"),
+    ],
+)
+def test_colon_outside_bold_is_format_error(old, new):
+    text = FIXTURE.read_text(encoding="utf-8")
+    assert old in text
+    with pytest.raises(ArtifactError, match="TC-02.*двоеточие"):
+        parse_cases(text.replace(old, new, 1))
+
+
+def test_several_code_refs_in_one_source_entry():
+    case = parse_cases(MANUAL.replace("‹R-01›", "‹R-01, D-01›; code: svc/a.cs:12, svc/b.cs:40"))[0]
+    assert case.sources == ["R-01", "D-01", "code: svc/a.cs:12, svc/b.cs:40"]

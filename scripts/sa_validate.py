@@ -78,8 +78,23 @@ def _duplicates(ids: list[str]) -> list[str]:
     return duplicates
 
 
+QA_PREFIXES = ("TC", "U", "QV")
+
+
 def _unknown(refs: list[str], known: dict) -> list[str]:
-    return [r for r in refs if r != "BRD" and known.get(ref_prefix(r)) is not None and r not in known[ref_prefix(r)]]
+    qa = [f"{r} (ID QA — в артефактах аналитика не используется)" for r in refs if ref_prefix(r) in QA_PREFIXES]
+    return qa + [r for r in refs if r != "BRD" and known.get(ref_prefix(r)) is not None and r not in known[ref_prefix(r)]]
+
+
+def _qa_question_ids(task_dir: Path) -> set[str]:
+    """Q-QA из qa/questions.md: аналитик переносит ответ в decisions.md со ссылкой на вопрос QA."""
+    path = task_dir / "qa" / "questions.md"
+    if not path.exists():
+        return set()
+    try:
+        return {q.id for q in parse_questions(path.read_text(encoding="utf-8")) if q.audience == "QA"}
+    except ArtifactError:
+        return set()  # формат qa/questions.md проверяет validate_qa
 
 
 def validate_brd(text: str) -> tuple[list[str], set[str] | None]:
@@ -612,6 +627,8 @@ def validate_task(task_dir: Path) -> list[str]:
     known["R"] = _run(task_dir, "BRD", validate_brd, errors)
     known["IM"] = _run(task_dir, "impact-map", lambda t: validate_impact_map(t, known), errors)
     known["Q"] = _run(task_dir, "questions", lambda t: validate_questions(t, known), errors)
+    if known["Q"] is not None:
+        known["Q"] = known["Q"] | _qa_question_ids(task_dir)
     template = state.get("template") if isinstance(state.get("template"), str) else None
     _run(task_dir, "context", lambda t: validate_context(t, known, template), errors)
     known["D"] = _run(task_dir, "decisions", lambda t: validate_decisions(t, known), errors)

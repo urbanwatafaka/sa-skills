@@ -14,6 +14,8 @@ VAGUE = ("корректно", "правильно", "проверить, что
 
 HEAD_RE = re.compile(r"^###\s+(?:(TC-\d{2,})\b\s*)?(.*)$")
 FIELD_RE = re.compile(r"^- \*\*(Вид|Приоритет|Покрывает|Источник):\*\*\s*(.*)$")
+COLON_OUTSIDE_RE = re.compile(r"^(?:- )?\*\*([^*:]+)\*\*\s*:")
+SOURCE_PREFIXES = ("code:", "код:", "docs:")
 BLOCK_RE = re.compile(r"^\*\*([^*]+?):\*\*\s*(.*)$")
 STEP_RE = re.compile(r"^\d+\.\s+(.*)$")
 BLOCKS = {"Описание": "description", "Предусловия": "preconditions", "Шаги": "steps", "Ожидаемый результат": "expected"}
@@ -38,9 +40,15 @@ class Case:
 
 def _split(text: str) -> list[list[str]]:
     chunks: list[list[str]] = []
-    inside = False
+    inside = fence = False
     for line in text.replace("\r\n", "\n").split("\n"):
-        if line.startswith("### "):
+        marker = line.strip().startswith("```")
+        if fence or marker:
+            if marker:
+                fence = not fence
+            if inside:
+                chunks[-1].append(line)  # заголовок внутри блока кода — текст шага, не новый кейс
+        elif line.startswith("### "):
             chunks.append([line])
             inside = True
         elif line.startswith(("# ", "## ")):
@@ -87,7 +95,12 @@ def _parse_one(lines: list[str]) -> tuple[Case, list[str]]:
             continue
         field = FIELD_RE.match(line)
         block = BLOCK_RE.match(line)
-        if field:
+        misplaced = COLON_OUTSIDE_RE.match(line)
+        if misplaced:
+            name = misplaced.group(1).strip()
+            errors.append(f"«{name}»: двоеточие вне жирного — пиши **{name}:**")
+            current = None
+        elif field:
             if field.group(1) in fields:
                 errors.append(f"поле «{field.group(1)}» повторяется")
             fields[field.group(1)] = field.group(2).strip()
@@ -119,7 +132,7 @@ def _parse_one(lines: list[str]) -> tuple[Case, list[str]]:
         kind=fields.get("Вид", ""),
         priority=fields.get("Приоритет", ""),
         covers=_tokens(fields.get("Покрывает", "")),
-        sources=_tokens(fields.get("Источник", "").replace("‹", "").replace("›", "")),
+        sources=_sources(fields.get("Источник", "")),
         description=text["Описание"],
         preconditions=text["Предусловия"],
         steps=steps,
@@ -131,6 +144,18 @@ def _parse_one(lines: list[str]) -> tuple[Case, list[str]]:
 
 def _tokens(value: str) -> list[str]:
     return [t.strip() for t in re.split(r"[,;]", value) if t.strip()]
+
+
+def _sources(value: str) -> list[str]:
+    """ID ТЗ через запятую; ссылка на код или индекс — целиком до «;», в ней могут быть запятые."""
+    result = []
+    for part in value.replace("‹", "").replace("›", "").split(";"):
+        part = part.strip()
+        if part.startswith(SOURCE_PREFIXES):
+            result.append(part)
+        else:
+            result += [t.strip() for t in part.split(",") if t.strip()]
+    return result
 
 
 def parse_cases(text: str) -> list[Case]:

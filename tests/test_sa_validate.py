@@ -616,3 +616,25 @@ def test_validate_qa_source_tokens(qa_cases_task):
 def test_validate_qa_docs_source(qa_cases_task):
     _replace(qa_cases_task / "qa" / "cases.md", "‹IM-04›", "‹IM-04›; docs: payform.cabinet.client/docs/tech.md#API")
     assert _qa_errors(qa_cases_task) == []
+
+
+def test_decision_may_reference_qa_question(qa_cases_task):
+    from sa_validate import validate_task
+
+    path = qa_cases_task / "decisions.md"
+    row = next(l for l in path.read_text(encoding="utf-8").splitlines() if l.startswith("| D-01 |"))
+    new = row.replace("| D-01 | Q-PO-01 |", "| D-02 | Q-QA-01 |")
+    path.write_text(path.read_text(encoding="utf-8").replace(row, row + "\n" + new), encoding="utf-8")
+    assert any("Q-QA-01" in e for e in validate_task(qa_cases_task))
+    (qa_cases_task / "qa" / "questions.md").write_text(
+        "# Вопросы QA\n\n## Для аналитика\n- **Q-QA-01** [D-01] Код ответа? — *answered*\n", encoding="utf-8"
+    )
+    assert not any("Q-QA-01" in e for e in validate_task(qa_cases_task))
+
+
+def test_qa_ids_not_allowed_in_analyst_refs(task_dir):
+    from sa_validate import validate_task
+
+    path = task_dir / "questions.md"
+    path.write_text(path.read_text(encoding="utf-8").replace("**Q-SA-01** [IM-04]", "**Q-SA-01** [IM-04, U-01]"), encoding="utf-8")
+    assert any("U-01" in e and "QA" in e for e in validate_task(task_dir))

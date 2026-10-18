@@ -180,3 +180,24 @@ def test_extract_skips_non_list_lines(qa_task):
     assert "01-brd/ui/1" in where
     assert "03-changes/payform.payment.saleschannels/Back/2.1" in where
     assert not any("{" in u.text for u in extract_units(qa_task))
+
+
+def test_list_items_irregular_dedent_keeps_unique_paths():
+    from sa_qa_units import _list_items
+
+    items = _list_items(["1. a", "    - b", "    - c", "  - d", "2. e"])
+    assert [p for p, _ in items] == ["1", "1.1", "1.2", "1.3", "2"]
+
+
+def test_sync_restores_human_status_when_item_returns(qa_task):
+    units = sync_units(qa_task)
+    target = units[1]
+    set_status_in_file(qa_task, target.id, "не тестируется", "нет стенда")
+    path = qa_task / "draft" / "01-brd.md"
+    original = path.read_text(encoding="utf-8")
+    remove_item(qa_task, target.where)
+    removed = {u.id: u for u in sync_units(qa_task)}[target.id]
+    assert removed.status == "удал."
+    path.write_text(original, encoding="utf-8")
+    back = {u.id: u for u in sync_units(qa_task)}[target.id]
+    assert (back.status, back.reason) == ("не тестируется", "нет стенда")

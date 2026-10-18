@@ -14,6 +14,7 @@ HEADER = ["ID", "Где", "Пункт", "Статус", "Причина"]
 STATUSES = ("", "не поведение", "не тестируется", "нужно решение", "удал.")
 REMOVED = "удал."
 SIMILAR = 0.6
+WAS_RE = re.compile(r"^было: (не поведение|не тестируется|нужно решение) — (.*)$")
 
 TRACE_RE = re.compile(r"\s*‹([^›]*)›")
 ITEM_RE = re.compile(r"^(\s*)(?:\d+\.|[-*•])\s+(.*)$")
@@ -51,10 +52,13 @@ def _list_items(lines: list[str]) -> list[tuple[str, str]]:
         match = ITEM_RE.match(line)
         if match:
             indent = len(match.group(1).expandtabs(4))
+            popped = None
             while stack and stack[-1][0] > indent:
-                stack.pop()
+                popped = stack.pop()
             if stack and stack[-1][0] == indent:
                 stack[-1][1] += 1
+            elif popped:  # отступ между уровнями — сосед закрытого уровня, а не новый подуровень
+                stack.append([indent, popped[1] + 1])
             else:
                 stack.append([indent, 1])
             items.append([".".join(str(n) for _, n in stack), match.group(2)])
@@ -244,11 +248,15 @@ def sync_units(task_dir: Path) -> list[Unit]:
             unit.id = old.id
             if old.status != REMOVED:
                 unit.status, unit.reason = old.status, old.reason
+            elif kept := WAS_RE.match(old.reason):  # пункт вернулся — возвращаем статус человека
+                unit.status, unit.reason = kept.group(1), kept.group(2)
         else:
             unit.id = new_ids[fresh.index(i)]
         result.append(unit)
     for j in free:
         removed = saved[j]
+        if removed.status not in ("", REMOVED):
+            removed.reason = f"было: {removed.status} — {removed.reason}"
         removed.status = REMOVED
         result.append(removed)
     write_units(task_dir, result)
