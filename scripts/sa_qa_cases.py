@@ -14,7 +14,8 @@ VAGUE = ("корректно", "правильно", "проверить, что
 
 HEAD_RE = re.compile(r"^###\s+(?:(TC-\d{2,})\b\s*)?(.*)$")
 FIELD_RE = re.compile(r"^- \*\*(Вид|Приоритет|Покрывает|Источник):\*\*\s*(.*)$")
-COLON_OUTSIDE_RE = re.compile(r"^(?:- )?\*\*([^*:]+)\*\*\s*:")
+STEP_RESULT_RE = re.compile(r"- Результат:\s*")  # подшаг-результат без текста
+COLON_OUTSIDE_RE =re.compile(r"^(?:- )?\*\*([^*:]+)\*\*\s*:")
 SOURCE_PREFIXES = ("code:", "код:", "docs:")
 BLOCK_RE = re.compile(r"^\*\*([^*]+?):\*\*\s*(.*)$")
 STEP_RE = re.compile(r"^\d+\.\s+(.*)$")
@@ -197,6 +198,9 @@ def lint_case(case: Case) -> list[str]:
         errors.append("предусловия: пусто")
     if not case.steps:
         errors.append("шаги: нет ни одного шага")
+    for n, step in enumerate(case.steps, start=1):
+        if any(STEP_RESULT_RE.fullmatch(line.strip()) for line in step.splitlines()[1:]):
+            errors.append(f"шаги: шаг {n} — пустой результат «- Результат:»")
     if not case.expected:
         errors.append("ожидаемый результат: пусто")
     elif case.kind == "бэкенд" and not CODE_RE.search(case.expected) and not QA_PLACEHOLDER_RE.search(case.expected):

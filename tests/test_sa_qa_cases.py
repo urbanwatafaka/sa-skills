@@ -162,3 +162,27 @@ def test_several_code_refs_in_one_source_entry():
 
 def test_lint_backend_code_placeholder_accepted():
     assert lint_case(make_case(kind="бэкенд", expected="Ответ ⚠ Q-QA-02; документ не создан")) == []
+
+
+STEP_RESULTS = MANUAL.replace(
+    "1. Открыть экран.\n",
+    "1. Открыть экран ЛК, выбрать файл.\n   - Результат: файл сохранился — показано «logo.png».\n"
+    "2. Открыть экран БО, выбрать файл.\n   - Результат: файл сохранился — показано «logo.png».\n",
+)
+
+
+def test_step_results_kept_in_steps():
+    case = parse_cases(STEP_RESULTS)[0]
+    assert len(case.steps) == 2
+    assert case.steps[0].splitlines()[1] == "- Результат: файл сохранился — показано «logo.png»."
+    assert lint_case(case) == []
+
+
+def test_empty_step_result_is_error():
+    case = parse_cases(STEP_RESULTS.replace("   - Результат: файл сохранился — показано «logo.png».\n2.", "   - Результат:\n2.", 1))[0]
+    assert any(e.startswith("шаги:") and "шаг 1" in e and "результат" in e for e in lint_case(case))
+
+
+def test_vague_step_result_is_error():
+    case = parse_cases(STEP_RESULTS.replace("файл сохранился — показано «logo.png».\n2.", "работает корректно\n2.", 1))[0]
+    assert any("расплывчато" in e and "шаг 1" in e for e in lint_case(case))

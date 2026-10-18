@@ -132,3 +132,10 @@ def test_schema_doc_describes_qa():
     assert ", ".join(CSV_HEADER) in text
     for status in ("не поведение", "не тестируется", "нужно решение", "удал."):
         assert f"`{status}`" in text, status
+
+
+def test_qa_rules_step_results():
+    rules = (ROOT / "shared/rules/qa-cases.md").read_text(encoding="utf-8")
+    assert "### Несколько случаев в одном кейсе" in rules and "   - Результат:" in rules
+    assert "- Результат:" in (ROOT / "agents/qa-reviewer.md").read_text(encoding="utf-8")
+    assert "- Результат:" in (ROOT / "skills/qa-cases/SKILL.md").read_text(encoding="utf-8")
