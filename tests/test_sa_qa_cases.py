@@ -158,3 +158,7 @@ def test_colon_outside_bold_is_format_error(old, new):
 def test_several_code_refs_in_one_source_entry():
     case = parse_cases(MANUAL.replace("‹R-01›", "‹R-01, D-01›; code: svc/a.cs:12, svc/b.cs:40"))[0]
     assert case.sources == ["R-01", "D-01", "code: svc/a.cs:12, svc/b.cs:40"]
+
+
+def test_lint_backend_code_placeholder_accepted():
+    assert lint_case(make_case(kind="бэкенд", expected="Ответ ⚠ Q-QA-02; документ не создан")) == []

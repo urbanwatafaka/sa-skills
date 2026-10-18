@@ -19,6 +19,7 @@ SOURCE_PREFIXES = ("code:", "код:", "docs:")
 BLOCK_RE = re.compile(r"^\*\*([^*]+?):\*\*\s*(.*)$")
 STEP_RE = re.compile(r"^\d+\.\s+(.*)$")
 BLOCKS = {"Описание": "description", "Предусловия": "preconditions", "Шаги": "steps", "Ожидаемый результат": "expected"}
+QA_PLACEHOLDER_RE = re.compile(r"⚠\s*Q-QA-\d{2,}")  # код ответа ждёт ответа аналитика
 CODE_RE = re.compile(r"(?<!\d)[1-5]\d\d(?!\d)")
 DETAIL_RE = re.compile(r"(?<!\d)[1-5]\d\d(?!\d)|«|`")
 
@@ -198,7 +199,7 @@ def lint_case(case: Case) -> list[str]:
         errors.append("шаги: нет ни одного шага")
     if not case.expected:
         errors.append("ожидаемый результат: пусто")
-    elif case.kind == "бэкенд" and not CODE_RE.search(case.expected):
+    elif case.kind == "бэкенд" and not CODE_RE.search(case.expected) and not QA_PLACEHOLDER_RE.search(case.expected):
         errors.append("ожидаемый результат: у бэкенд-кейса нет кода ответа")
     for where, text in [*((f"шаг {n}", s) for n, s in enumerate(case.steps, start=1)), ("ожидаемый результат", case.expected)]:
         errors += [f"расплывчато: «{w}» — {where}; назови конкретное значение" for w in _vague(text)]
