@@ -114,6 +114,13 @@ def set_value(task_dir: Path, key: str, value: str) -> dict:
         if not (value.isascii() and value.isdigit() and int(value) > 0):
             raise ArtifactError("published.version: целое число больше нуля — версия страницы в Confluence")
         published["version"] = int(value)
+    elif key == "code_check":
+        draft = task_dir / ARTIFACTS["draft"]
+        if value != "draft":
+            raise ArtifactError("code_check: значение draft — отметить текущую версию draft.md сверенной с кодом")
+        if not draft.exists():
+            raise ArtifactError("нет draft.md — сначала /tdd-draft")
+        state["code_check"] = file_sha1(draft)
     elif key.startswith("access.") and key[len("access."):] in ACCESS_KEYS:
         if value not in ACCESS_MODES:
             raise ArtifactError(f"{key}: режим одно из {', '.join(sorted(ACCESS_MODES))}")
@@ -123,7 +130,7 @@ def set_value(task_dir: Path, key: str, value: str) -> dict:
         access[key[len("access."):]] = value
     else:
         raise ArtifactError(
-            f"ключ {key} менять нельзя; допустимы: stage, template, published, published.version, "
+            f"ключ {key} менять нельзя; допустимы: stage, template, published, published.version, code_check, "
             + ", ".join(f"access.{k}" for k in sorted(ACCESS_KEYS))
         )
     save_state(task_dir, state)

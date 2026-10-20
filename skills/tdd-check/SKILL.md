@@ -29,13 +29,16 @@ allowed-tools: Bash(python3:*)
    - Собери JSON во временный файл в папке задачи `<tasks_dir>/<KEY>/review-input.json`: `{"new": [...], "close": [...]}`. `new` — замечания ревьюера и сверки с кодом, каждое `{"severity", "where", "problem", "ref", "proposal"}` (`ref` без ссылки — `—`); замечания `precheck` не передавай — команда добавит их сама. `close` — ID прошлых `открыто` и `принято`, по которым ревьюер дал вердикт `закрыто`.
    - `python3 <плагин>/scripts/sa_review.py write tasks/<KEY> <tasks_dir>/<KEY>/review-input.json`. Команда сохраняет прошлые строки, закрывает замечания `precheck`, которых больше нет, и `открыто` с исчезнувшим ID, пропускает дубли, выдаёт ID новым и пишет шапку и матрицу покрытия. Вывод — `round`, закрытые, новые и число открытых: он нужен для итога.
    - Удали `review-input.json`.
-7. **Проверка.** `python3 <плагин>/scripts/sa_validate.py tasks/<KEY>` — исправляй `review.md`, пока не `OK`. Затем `python3 <плагин>/scripts/sa_state.py record tasks/<KEY> draft` и `python3 <плагин>/scripts/sa_state.py set tasks/<KEY> stage check`.
+7. **Проверка.** `python3 <плагин>/scripts/sa_validate.py tasks/<KEY>` — исправляй `review.md`, пока не `OK`. Затем `python3 <плагин>/scripts/sa_state.py record tasks/<KEY> draft` и `python3 <плагин>/scripts/sa_state.py set tasks/<KEY> stage check`. С `--code` — ещё `python3 <плагин>/scripts/sa_state.py set tasks/<KEY> code_check draft`: эта версия черновика сверена с кодом (по отметке статус решает, нужна ли финальная сверка).
 8. **Итог аналитику**, коротко:
    - число замечаний по важности; при повторном запуске — закрыто N (ID), осталось M (ID), новых K;
    - критичные — списком: ID, где, проблема;
    - строки матрицы без историй (для `R` типа `функц.` и `UI`);
    - с `--code` — какие сервисы не сверены;
    - следующий шаг: принять и внести — `/tdd-update RV-01 RV-03` или `/tdd-update все`; отклонить — `/tdd-update отклонить RV-02`; после правок — снова `/tdd-check`. Замечаний `открыто` и `принято` нет — ТЗ готово: `python3 <плагин>/scripts/sa_state.py set tasks/<KEY> stage done`.
+
+
+Последней строкой итога — предложение следующего шага по `<база>/../sa-flow/SKILL.md`, раздел «Что предлагать» («Дальше — … Запускаю?»; в точке остановки — что нужно от аналитика). Следующую стадию сам не запускай — только после согласия аналитика.
 
 ## Чего не делать
 

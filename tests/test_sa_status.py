@@ -1,3 +1,6 @@
+import pytest
+
+from sa_artifacts import ArtifactError
 from sa_state import record_inputs
 from sa_status import build_status, main, next_step
 
@@ -43,7 +46,7 @@ def test_next_step():
     assert next_step("impact", 0, True) == "/tdd-start"
     assert next_step("start", 0, None) == "/tdd-clarify"
     assert next_step("clarify", 0, True) == "/tdd-draft"
-    assert next_step("draft", 0, True) == "/tdd-check"
+    assert next_step("draft", 0, True) == "/tdd-check --code — первое ревью со сверкой с кодом"
     assert next_step("check", 0, True) == "/tdd-update по принятым замечаниям, затем /tdd-check"
     assert next_step("done", 0, True) == "задача завершена"
     assert next_step("???", 0, True) == "проверь state.json: неизвестная стадия"
@@ -96,7 +99,11 @@ def test_review_status_and_next_step(draft_task):
     set_status(draft_task, "принято", ["RV-01"])
     assert build_status(draft_task).endswith("Следующий шаг: /tdd-update — внести принятые замечания, затем /tdd-check")
     set_status(draft_task, "отклонено", ["RV-01"])
+    assert build_status(draft_task).endswith("Следующий шаг: замечаний нет — финальная сверка с кодом: /tdd-check --code")
+    set_value(draft_task, "code_check", "draft")
     assert build_status(draft_task).endswith("Следующий шаг: замечаний нет — завершить: sa_state.py set <папка задачи> stage done")
+    with pytest.raises(ArtifactError, match="code_check: значение draft"):
+        set_value(draft_task, "code_check", "yes")
 
 
 def test_review_stale_status(draft_task):

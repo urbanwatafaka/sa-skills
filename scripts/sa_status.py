@@ -6,21 +6,23 @@ from pathlib import Path
 
 from sa_artifacts import ArtifactError, Question, find_refs, find_table, parse_questions, parse_tables, split_frontmatter
 from sa_review import review_summary
-from sa_state import ARTIFACTS, load_state, stale_inputs
+from sa_state import ARTIFACTS, file_sha1, load_state, stale_inputs
 from sa_validate import CONTEXT_COLUMNS
 
 _NEXT = {
     "impact": "/tdd-start",
     "start": "/tdd-clarify",
-    "draft": "/tdd-check",
+    "draft": "/tdd-check --code — первое ревью со сверкой с кодом",
     "check": "/tdd-update по принятым замечаниям, затем /tdd-check",
     "done": "задача завершена",
 }
 
 
 def next_step(
-    stage: str | None, blocking_open: int, brd_complete: bool | None, unresolved_scope: int = 0, review: dict | None = None
+    stage: str | None, blocking_open: int, brd_complete: bool | None, unresolved_scope: int = 0, review: dict | None = None,
+    code_checked: bool = True,
 ) -> str:
+    """code_checked — последняя сверка с кодом (/tdd-check --code) была на текущей версии draft.md."""
     if brd_complete is False:
         return "переслать вопросы PO, после ответов запустить /tdd-impact повторно"
     if stage == "clarify":
@@ -34,6 +36,8 @@ def next_step(
             return "/tdd-update — внести принятые замечания, затем /tdd-check"
         if review["open"]:
             return "разобрать замечания review.md: /tdd-update <RV-xx…> — принять, «/tdd-update отклонить RV-xx» — отклонить"
+        if not code_checked:
+            return "замечаний нет — финальная сверка с кодом: /tdd-check --code"
         return "замечаний нет — завершить: sa_state.py set <папка задачи> stage done"
     return _NEXT.get(stage, "проверь state.json: неизвестная стадия")
 
@@ -144,7 +148,10 @@ def build_status(task_dir: Path) -> str:
     lines.append(f"Устаревшие входы: {', '.join(stale) if stale else 'нет'}")
 
     blocking_open = sum(q.blocking for q in questions if q.status == "open")
-    lines.append(f"Следующий шаг: {next_step(state.get('stage'), blocking_open, brd_complete, len(unresolved), review)}")
+    draft_md = task_dir / ARTIFACTS["draft"]
+    code_checked = draft_md.exists() and state.get("code_check") == file_sha1(draft_md)
+    step = next_step(state.get("stage"), blocking_open, brd_complete, len(unresolved), review, code_checked)
+    lines.append(f"Следующий шаг: {step}")
     return "\n".join(lines)
 
 

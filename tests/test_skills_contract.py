@@ -352,3 +352,26 @@ def test_qa_skills_paths_and_scope():
         text = _skill(name)
         assert "sa_paths.py" in text, name
         assert "<tasks_dir>/<KEY>/qa/" in text, name
+
+
+def test_sa_flow_contract():
+    _assert_contains(
+        _skill("sa-flow"),
+        (
+            "allowed-tools: Bash(python3:*)",
+            "sa_paths.py",
+            "sa_status.py tasks/<KEY>",
+            "sa_questions.py export tasks/<KEY> PO",
+            "/tdd-impact", "/tdd-start", "/tdd-clarify", "/tdd-draft", "/tdd-check --code", "/tdd-update",
+            "## Точки остановки",
+            "Запускаю?",
+            "Не запускай две стадии подряд на одно «да»",
+            "Не запускай стадии QA",
+        ),
+    )
+
+
+def test_stage_skills_propose_next_step():
+    for name in ("tdd-impact", "tdd-start", "tdd-clarify", "tdd-draft", "tdd-check", "tdd-update", "tdd-status"):
+        assert "<база>/../sa-flow/SKILL.md" in _skill(name), name
+    assert "code_check draft" in _skill("tdd-check")
