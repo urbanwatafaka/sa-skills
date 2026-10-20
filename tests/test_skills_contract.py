@@ -161,6 +161,8 @@ def test_tdd_draft_contract():
         (
             "allowed-tools: Bash(python3:*)",
             "sa_paths.py",
+            "sa_locale.py find <repos_root>/<фронт>",
+            "sa_puml.py steps",
             "sa_status.py tasks/<KEY>",
             "sa_draft.py gaps tasks/<KEY>",
             "sa_draft.py plan tasks/<KEY>",
@@ -202,6 +204,7 @@ def test_tdd_check_contract():
         (
             "allowed-tools: Bash(python3:*)",
             "sa_paths.py",
+            "sa_locale.py find <repos_root>/<фронт>",
             "sa_status.py tasks/<KEY>",
             "sa_validate.py tasks/<KEY>",
             "sa_review.py precheck tasks/<KEY>",
@@ -295,6 +298,7 @@ def test_qa_cases_contract():
         (
             "allowed-tools: Bash(python3:*)",
             "sa_qa.py units tasks/<KEY>",
+            "sa_locale.py find <repos_root>/<фронт>",
             "sa_ids.py next tasks/<KEY> TC",
             "sa-skills:source-reader",
             "code:",

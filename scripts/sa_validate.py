@@ -38,7 +38,7 @@ from sa_draft import (
     task_manifest,
     trace_refs,
 )
-from sa_puml import kind_errors, structural_errors
+from sa_puml import kind_errors, step_ref_errors, structural_errors
 from sa_review import COVERAGE_COLUMNS, REVIEW_COLUMNS, SEVERITIES, STATUSES, WHOLE, coverage
 from sa_state import ACCESS_KEYS, ACCESS_MODES, ARTIFACTS, STAGES, TEMPLATE_RE, file_sha1, load_state
 
@@ -461,6 +461,7 @@ def validate_draft(task_dir: Path, state: dict, known: dict) -> list[str]:
             elif not (draft_dir / ref).exists():
                 errors.append(f"{rel}: нет файла draft/{ref}")
                 complete = False
+        errors += [f"{rel}: {e}" for e in step_ref_errors(text, draft_dir)]
         for ref in OPENAPI_RE.findall(text):
             if not OPENAPI_REF_RE.fullmatch(ref):
                 errors.append(f"{rel}: @openapi {ref} — путь вида api/<сервис>.yaml")

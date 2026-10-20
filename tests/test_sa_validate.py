@@ -321,7 +321,8 @@ def test_draft_diagrams(draft_task):
     (diagrams / "02-architecture-sequence.puml").write_text(
         "@startuml\nA -> B: <color:#red>x</color>\nalt x\n@enduml\n", encoding="utf-8"
     )
-    _write(draft_task, "02-architecture", "# Архитектура и Процесс", "@diagram diagrams/02-architecture-sequence.puml")
+    _write(draft_task, "02-architecture", "# Архитектура и Процесс",
+           "@diagram diagrams/02-architecture-sequence.puml\n\n1. A вызывает B. ‹R-01› **Шаг [001]**")
     _assemble(draft_task)
     assert validate_task(draft_task) == [
         "draft/diagrams/02-architecture-sequence.puml: строка 3: блок «alt» не закрыт",
@@ -333,6 +334,23 @@ def test_draft_diagrams(draft_task):
     errors = validate_task(draft_task)
     assert "draft/02-architecture.md: нет файла draft/diagrams/nope.puml" in errors
     assert not any("устарел" in e for e in errors)
+
+
+def test_draft_step_refs(draft_task):
+    diagrams = draft_task / "draft/diagrams"
+    diagrams.mkdir()
+    (diagrams / "02-architecture-sequence.puml").write_text(
+        '@startuml\nautonumber "<b>[000]"\nA -> B: x\nB --> A: y\nA -> A: z\n@enduml\n', encoding="utf-8"
+    )
+    _write(draft_task, "02-architecture", "# Архитектура и Процесс",
+           ":::expand Процесс: П\n@diagram diagrams/02-architecture-sequence.puml\n\n### Описание шагов\n\n"
+           "1. A вызывает B. ‹R-01› **Шаг [001]**\n2. Ответ. ‹R-01› **Шаги [004]-[005]**\n:::")
+    _assemble(draft_task)
+    errors = validate_task(draft_task)
+    assert ("draft/02-architecture.md: 02-architecture-sequence.puml: «[005]» — на диаграмме шагов 3; "
+            "номера — из sa_puml.py steps") in errors
+    assert ("draft/02-architecture.md: 02-architecture-sequence.puml: шаги [002]-[003] не описаны ни одним пунктом "
+            "«Описания шагов»") in errors
 
 
 def test_draft_gateway_prefix_in_text(draft_task):

@@ -225,9 +225,122 @@ def check_files(paths: list[Path]) -> tuple[list[str], str]:
     return errors, mode
 
 
+# Сообщение sequence: участник, необязательный цвет, стрелка, участник — `back [#red]-> pd: …`, `pd --> kafka`, `a -[#red]>> b`.
+_PARTY = r'(?:"[^"]*"|[\w.]+|\[|\]|\?)'
+MESSAGE_RE = re.compile(
+    rf"^{_PARTY}\s*(?:\[[^\]]*\]\s*)?(?P<arrow>[<ox\\/]{{0,2}}-{{1,2}}(?:\[[^\]]*\])?-?[>ox\\/]{{0,2}})\s*{_PARTY}"
+)
+_NOTE_BLOCK_RE = re.compile(r"^[hr]?note\b")
+
+
+def sequence_steps(text: str) -> list[tuple[int, int, str]]:
+    """Сообщения sequence-диаграммы в порядке autonumber: (номер шага, строка файла, текст строки)."""
+    steps: list[tuple[int, int, str]] = []
+    in_note = in_comment = False
+    for number, raw in enumerate(text.splitlines(), start=1):
+        line = raw.strip()
+        low = line.lower()
+        if in_comment:
+            in_comment = "'/" not in line
+            continue
+        if low.startswith("/'"):
+            in_comment = "'/" not in line[2:]
+            continue
+        if in_note:
+            in_note = not low.startswith("end note") and low not in ("endnote", "end hnote", "end rnote")
+            continue
+        if not low or low.startswith("'"):
+            continue
+        if _NOTE_BLOCK_RE.match(low):
+            in_note = ":" not in QUOTED_RE.sub("", low) and not NOTE_AS_RE.search(low)
+            continue
+        match = MESSAGE_RE.match(line)
+        if (match and ("<" in match.group("arrow") or ">" in match.group("arrow"))) or low.startswith("return "):
+            steps.append((len(steps) + 1, number, line))
+    return steps
+
+
+STEP_REF_RE = re.compile(r"\*\*Шаги?\s+\[(\d{3})\](?:\s*[-–—]\s*\[(\d{3})\])?\*\*")
+_DIAGRAM_LINE_RE = re.compile(r"^@diagram\s+(diagrams/[\w.-]+\.puml)\s*$")
+_SEQUENCE_STEM_RE = re.compile(r"-sequence(?:-\d+)?$")
+
+
+def _ranges(numbers: list[int]) -> str:
+    parts: list[str] = []
+    for n in numbers:
+        if parts and parts[-1][1] == n - 1:
+            parts[-1][1] = n
+        else:
+            parts.append([n, n])
+    return ", ".join(f"[{a:03d}]" if a == b else f"[{a:03d}]-[{b:03d}]" for a, b in parts)
+
+
+def step_ref_errors(text: str, draft_dir: Path) -> list[str]:
+    """Отсылки «Шаг(и) [x]-[y]» под sequence-диаграммой против её шагов: нет лишних и нет неописанных.
+
+    Описание диаграммы — строки после `@diagram …-sequence.puml` до следующего `@diagram` или закрытия `:::`.
+    """
+    errors: list[str] = []
+    current: str | None = None
+    refs: list[tuple[int, int]] = []
+
+    def finish() -> None:
+        path = draft_dir / current
+        if not path.exists():
+            return
+        total = len(sequence_steps(path.read_text(encoding="utf-8")))
+        name = Path(current).name
+        if not refs:
+            errors.append(f"{name}: под диаграммой нет отсылок «**Шаги [00X]-[00Y]**» — опиши шаги [001]-[{total:03d}]")
+            return
+        covered: set[int] = set()
+        for start, end in refs:
+            if end < start:
+                errors.append(f"{name}: «Шаги [{start:03d}]-[{end:03d}]» — конец диапазона раньше начала")
+                continue
+            if end > total:
+                errors.append(f"{name}: «[{end:03d}]» — на диаграмме шагов {total}; номера — из sa_puml.py steps")
+            covered.update(range(start, min(end, total) + 1))
+        missing = [n for n in range(1, total + 1) if n not in covered]
+        if missing:
+            errors.append(f"{name}: шаги {_ranges(missing)} не описаны ни одним пунктом «Описания шагов»")
+
+    for line in text.splitlines():
+        stripped = line.strip()
+        diagram = _DIAGRAM_LINE_RE.match(stripped)
+        if diagram or stripped == ":::":
+            if current:
+                finish()
+            current, refs = None, []
+            if diagram and _SEQUENCE_STEM_RE.search(Path(diagram.group(1)).stem):
+                current = diagram.group(1)
+            continue
+        if current:
+            refs += [(int(a), int(b or a)) for a, b in STEP_REF_RE.findall(line)]
+    if current:
+        finish()
+    return errors
+
+
+def render_steps(path: Path) -> str:
+    steps = sequence_steps(path.read_text(encoding="utf-8"))
+    if not steps:
+        return f"{path.name}: сообщений нет"
+    lines = [f"{path.name}: шагов {len(steps)}"]
+    lines += [f"[{step:03d}] строка {line}: {text}" for step, line, text in steps]
+    return "\n".join(lines)
+
+
 def main(argv: list[str]) -> int:
+    if len(argv) == 2 and argv[0] == "steps":
+        path = Path(argv[1])
+        if not path.exists():
+            print(f"ошибка: нет файла {path}", file=sys.stderr)
+            return 1
+        print(render_steps(path))
+        return 0
     if len(argv) < 2 or argv[0] != "check":
-        print("использование: sa_puml.py check <файл.puml>...", file=sys.stderr)
+        print("использование:\n  sa_puml.py check <файл.puml>...\n  sa_puml.py steps <файл-sequence.puml>", file=sys.stderr)
         return 2
     paths = [Path(p) for p in argv[1:]]
     missing = [str(p) for p in paths if not p.exists()]

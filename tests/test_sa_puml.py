@@ -3,7 +3,74 @@ import subprocess
 import pytest
 
 import sa_puml
-from sa_puml import MODE_STRUCTURE, check_files, find_renderer, main, parse_syntax_output, structural_errors
+from sa_puml import (
+    MODE_STRUCTURE, check_files, find_renderer, main, parse_syntax_output, sequence_steps, step_ref_errors,
+    structural_errors,
+)
+
+STEPS_SEQ = """\
+@startuml
+autonumber "<b>[000]"
+actor "Мерчант" as merchant
+participant "lkp-back" as back
+queue "Kafka" as kafka
+' merchant -> back: закомментировано
+== Раздел ==
+activate merchant
+merchant -> back: POST /api/x
+back [#red]-> kafka: <color:red>Событие</color>
+back -[#red]>> back: самострелка
+note right of back: a -> b не шаг
+note over back
+  c -> d не шаг
+end note
+back --> merchant: 200
+return ok
+@enduml
+"""
+
+
+def test_sequence_steps():
+    steps = sequence_steps(STEPS_SEQ)
+    assert [s[0] for s in steps] == [1, 2, 3, 4, 5]
+    assert [s[2] for s in steps] == [
+        "merchant -> back: POST /api/x",
+        "back [#red]-> kafka: <color:red>Событие</color>",
+        "back -[#red]>> back: самострелка",
+        "back --> merchant: 200",
+        "return ok",
+    ]
+    assert steps[0][1] == 9
+
+
+def test_step_ref_errors(tmp_path):
+    (tmp_path / "diagrams").mkdir()
+    (tmp_path / "diagrams/02-architecture-sequence.puml").write_text(STEPS_SEQ, encoding="utf-8")
+    (tmp_path / "diagrams/02-architecture-c2.puml").write_text("@startuml\n@enduml\n", encoding="utf-8")
+    ok = ("@diagram diagrams/02-architecture-c2.puml\n:::expand Процесс: П\n"
+          "@diagram diagrams/02-architecture-sequence.puml\n1. x **Шаг [001]**\n2. y **Шаги [002]–[005]**\n:::\n")
+    assert step_ref_errors(ok, tmp_path) == []
+    assert step_ref_errors(ok.replace("[005]", "[007]"), tmp_path) == [
+        "02-architecture-sequence.puml: «[007]» — на диаграмме шагов 5; номера — из sa_puml.py steps"
+    ]
+    assert step_ref_errors(ok.replace("[002]–[005]", "[003]-[004]"), tmp_path) == [
+        "02-architecture-sequence.puml: шаги [002], [005] не описаны ни одним пунктом «Описания шагов»"
+    ]
+    assert step_ref_errors(ok.replace("[002]–[005]", "[005]-[002]"), tmp_path)[0].endswith("конец диапазона раньше начала")
+    bare = ":::expand Процесс: П\n@diagram diagrams/02-architecture-sequence.puml\n:::\n1. **Шаг [001]**\n"
+    assert step_ref_errors(bare, tmp_path) == [
+        "02-architecture-sequence.puml: под диаграммой нет отсылок «**Шаги [00X]-[00Y]**» — опиши шаги [001]-[005]"
+    ]
+
+
+def test_steps_cli(tmp_path, capsys):
+    path = tmp_path / "x-sequence.puml"
+    path.write_text(STEPS_SEQ, encoding="utf-8")
+    assert main(["steps", str(path)]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[0] == "x-sequence.puml: шагов 5"
+    assert out[1] == "[001] строка 9: merchant -> back: POST /api/x"
+    assert main(["steps", str(tmp_path / "nope.puml")]) == 1
 
 SEQ = """\
 @startuml
