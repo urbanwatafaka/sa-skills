@@ -157,7 +157,7 @@ def test_stamp_then_incremental_and_human_edit(index_repos):
     data = json.loads((repo / "docs" / "sa-index" / STAMP_FILE).read_text(encoding="utf-8"))
     assert data["sha"] == git(repo, "rev-parse", "HEAD").strip()
     assert data["indexed"] == "2026-10-16"
-    assert data["plugin"] == "0.5.4"
+    assert data["plugin"] == "0.5.5"
     assert set(data["files"]) == {"tech.md", "DB.md", "bctc.md"}
     result = survey(repo)
     assert result["mode"] == "incremental"

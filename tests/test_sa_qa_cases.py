@@ -186,3 +186,13 @@ def test_empty_step_result_is_error():
 def test_vague_step_result_is_error():
     case = parse_cases(STEP_RESULTS.replace("файл сохранился — показано «logo.png».\n2.", "работает корректно\n2.", 1))[0]
     assert any("расплывчато" in e and "шаг 1" in e for e in lint_case(case))
+
+
+def test_reference_to_other_case_is_error():
+    errors = lint_case(make_case(steps=["Отправить сообщение из шага 1 кейса TC-02"], preconditions="Мерчант из TC-05"))
+    assert any("ссылка на другой кейс: TC-02 — шаг 1" in e for e in errors)
+    assert any("ссылка на другой кейс: TC-05 — предусловия" in e for e in errors)
+
+
+def test_own_id_is_not_reference():
+    assert not any("ссылка на другой кейс" in e for e in lint_case(make_case(description="Кейс TC-01 проверяет загрузку")))

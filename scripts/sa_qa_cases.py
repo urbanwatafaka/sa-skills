@@ -22,6 +22,7 @@ STEP_RE = re.compile(r"^\d+\.\s+(.*)$")
 BLOCKS = {"Описание": "description", "Предусловия": "preconditions", "Шаги": "steps", "Ожидаемый результат": "expected"}
 QA_PLACEHOLDER_RE = re.compile(r"⚠\s*Q-QA-\d{2,}")  # код ответа ждёт ответа аналитика
 CODE_RE = re.compile(r"(?<!\d)[1-5]\d\d(?!\d)")
+TC_REF_RE = re.compile(r"(?<![\w-])TC-\d{2,}\b")  # ссылка на другой кейс
 DETAIL_RE = re.compile(r"(?<!\d)[1-5]\d\d(?!\d)|«|`")
 
 
@@ -207,6 +208,12 @@ def lint_case(case: Case) -> list[str]:
         errors.append("ожидаемый результат: у бэкенд-кейса нет кода ответа")
     for where, text in [*((f"шаг {n}", s) for n, s in enumerate(case.steps, start=1)), ("ожидаемый результат", case.expected)]:
         errors += [f"расплывчато: «{w}» — {where}; назови конкретное значение" for w in _vague(text)]
+    parts = [("описание", case.description), ("предусловия", case.preconditions),
+             *((f"шаг {n}", s) for n, s in enumerate(case.steps, start=1)), ("ожидаемый результат", case.expected)]
+    for where, text in parts:
+        refs = sorted({r for r in TC_REF_RE.findall(text) if r != case.id})
+        if refs:
+            errors.append(f"ссылка на другой кейс: {', '.join(refs)} — {where}; кейс должен проходиться отдельно, повтори данные и тело целиком")
     return errors
 
 
