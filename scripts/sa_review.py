@@ -6,10 +6,11 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from sa_artifacts import ArtifactError, find_table, parse_tables, split_frontmatter
+from sa_artifacts import ArtifactError, find_refs, find_table, parse_tables, split_frontmatter
 from sa_draft import (
     block_section, placeholders, section_texts, task_data, task_manifest, trace_refs, untraced_impacts,
 )
+from sa_ids import next_ids
 from sa_state import ARTIFACTS, file_sha1, load_state, write_atomic
 
 SEVERITIES = ("критично", "важно", "совет")
@@ -25,6 +26,8 @@ ROW_ID_RE = re.compile(r"^\|\s*(RV-\d{2,})\s*\|")
 PRESERVED = "[сохраняется]"
 EXISTING = "[существует]"
 NO_SERVICE = "без сервиса"
+# Пункт про новый объект («Новый метод…», «**Новая таблица**…») — целевое поведение, а не утверждение о существующем.
+NEW_OBJECT_RE = re.compile(r"^\s*(?:[-*]\s+|\d+(?:\.\d+)*\.?\s+)?(?:\*\*)?Нов(?:ый|ая|ое|ые)\b")
 
 
 @dataclass
@@ -164,7 +167,7 @@ def as_is(task_dir: Path) -> dict[str, list[str]]:
             refs = trace_refs(line)
             if number in preserved:
                 kind = PRESERVED
-            elif any(r in existing for r in refs):
+            elif NEW_OBJECT_RE.match(line) is None and any(r in existing for r in refs):
                 kind = EXISTING
             else:
                 continue
@@ -225,6 +228,122 @@ def set_status(task_dir: Path, status: str, ids: list[str]) -> list[str]:
     return targets
 
 
+# Проблемы, которые формулирует precheck: такое замечание закрывается, когда precheck его больше не находит.
+SCRIPT_PROBLEM_RE = re.compile(r"^⚠ Q-|не покрыт ни одним критерием приёмки|не описан ни в одной секции")
+KEEP_OPEN = ("открыто", "принято")
+
+
+def _cell(value: str) -> str:
+    return " ".join(str(value).replace("|", "¦").split()) or "—"
+
+
+def _existing_ids(data: dict) -> set[str]:
+    return (
+        set(data["brd"]) | {row["ID"] for row in data["impact"]}
+        | {row["ID"] for row in data["decisions"]} | {q.id for q in data["questions"]}
+    )
+
+
+def build_review(task_dir: Path, new: list[dict], close: list[str], today: str | None = None) -> dict:
+    """Собирает review.md: прошлые строки (меняется только статус), замечания precheck и переданные, шапка, матрица.
+
+    new — замечания ревьюера и сверки с кодом: {severity, where, problem, ref, proposal}; close — ID прошлых
+    замечаний, которые ревьюер признал закрытыми. Замечания precheck скрипт берёт и закрывает сам.
+    """
+    from datetime import date
+
+    draft = _draft_md(task_dir)
+    state = load_state(task_dir)
+    path = task_dir / ARTIFACTS["review"]
+    old_rows: list[dict[str, str]] = []
+    round_no = 1
+    if path.exists():
+        meta, _ = split_frontmatter(path.read_text(encoding="utf-8"))
+        old_rows = review_rows(task_dir)
+        round_no = int(meta.get("round") or 0) + 1
+    by_id = {row["ID"]: row for row in old_rows}
+    for rid in close:
+        if rid not in by_id:
+            raise ArtifactError(f"нет замечания {rid}")
+        if by_id[rid]["Статус"] not in KEEP_OPEN:
+            raise ArtifactError(f"{rid} — {by_id[rid]['Статус']}, его статус не меняют")
+    found = precheck(task_dir)
+    script_keys = {(f.where, f.problem) for f in found}
+    existing = _existing_ids(task_data(task_dir))
+    closed: list[str] = []
+    for row in old_rows:
+        if row["Статус"] not in KEEP_OPEN:
+            continue
+        key = (row["Где"], row["Проблема"])
+        lost = row["Статус"] == "открыто" and any(
+            r not in existing for r in find_refs(row["← Ссылка"]) if not r.startswith(("RV-", "TC-", "U-", "QV-", "Q-QA-"))
+        )
+        if row["ID"] in close or (SCRIPT_PROBLEM_RE.search(row["Проблема"]) and key not in script_keys) or lost:
+            row["Статус"] = "закрыто"
+            closed.append(row["ID"])
+    candidates = [Finding(f.severity, f.where, f.problem, f.ref, f.proposal) for f in found]
+    for item in new:
+        try:
+            finding = Finding(*(_cell(item[k]) for k in ("severity", "where", "problem", "ref", "proposal")))
+        except KeyError as exc:
+            raise ArtifactError(f"в замечании нет поля {exc.args[0]}") from None
+        if finding.severity not in SEVERITIES:
+            raise ArtifactError(f"важность «{finding.severity}»: {', '.join(SEVERITIES)}")
+        candidates.append(finding)
+    seen = {(row["Где"], row["Проблема"]) for row in old_rows if row["Статус"] in ("открыто", "принято", "отклонено")}
+    fresh: list[Finding] = []
+    for f in candidates:
+        f = Finding(_cell(f.severity), _cell(f.where), _cell(f.problem), _cell(f.ref), _cell(f.proposal))
+        if (f.where, f.problem) not in seen:
+            seen.add((f.where, f.problem))
+            fresh.append(f)
+    ids = next_ids(task_dir, "RV", len(fresh)) if fresh else []
+    lines = [
+        "---",
+        f"draft: {file_sha1(draft)}",
+        f"reviewed: {today or date.today().isoformat()}",
+        f"round: {round_no}",
+        "---",
+        f"# Ревью черновика {state.get('task', task_dir.name)}",
+        "",
+        "## Замечания",
+        "",
+        "| " + " | ".join(REVIEW_COLUMNS) + " |",
+        "|" + "---|" * len(REVIEW_COLUMNS),
+    ]
+    lines += ["| " + " | ".join(row[c] for c in REVIEW_COLUMNS) + " |" for row in old_rows]
+    lines += [f"| {rid} {f.row()} открыто |" for rid, f in zip(ids, fresh)]
+    lines += ["", "## Покрытие BRD", "", coverage_table(task_dir), ""]
+    write_atomic(path, "\n".join(lines))
+    rows = old_rows + [{"Важность": f.severity, "Статус": "открыто"} for f in fresh]
+    return {
+        "round": round_no,
+        "closed": closed,
+        "new": ids,
+        "open": sum(r["Статус"] == "открыто" for r in rows),
+        "critical": sum(r["Статус"] == "открыто" and r["Важность"] == "критично" for r in rows),
+    }
+
+
+def render_write(task_dir: Path, source: Path) -> str:
+    import json
+
+    try:
+        text = source.read_text(encoding="utf-8")
+        payload = json.loads(text) if text.strip() else {}
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ArtifactError(f"{source}: не читается как JSON — {exc}") from None
+    if not isinstance(payload, dict):
+        raise ArtifactError(f"{source}: ожидается объект {{\"new\": [...], \"close\": [...]}}")
+    result = build_review(task_dir, payload.get("new") or [], payload.get("close") or [])
+    return "\n".join([
+        f"round: {result['round']}",
+        f"закрыто: {', '.join(result['closed']) or '—'}",
+        f"новых: {', '.join(result['new']) or '—'}",
+        f"открыто всего: {result['open']}, из них критичных: {result['critical']}",
+    ])
+
+
 def review_summary(task_dir: Path) -> dict | None:
     if not (task_dir / ARTIFACTS["review"]).exists():
         return None
@@ -247,19 +366,25 @@ USAGE = (
     "  sa_review.py precheck <папка задачи>\n"
     "  sa_review.py coverage <папка задачи>\n"
     "  sa_review.py asis <папка задачи>\n"
-    "  sa_review.py status <папка задачи> <принято|отклонено> <RV-xx…|все>"
+    "  sa_review.py status <папка задачи> <принято|отклонено> <RV-xx…|все>\n"
+    "  sa_review.py write <папка задачи> <файл.json с {\"new\": [...], \"close\": [...]}>"
 )
 RENDER = {"precheck": render_precheck, "coverage": coverage_table, "asis": render_as_is}
 
 
 def main(argv: list[str]) -> int:
     command = argv[0] if argv else ""
-    if not ((command in RENDER and len(argv) == 2) or (command == "status" and len(argv) >= 4)):
+    if not (
+        (command in RENDER and len(argv) == 2) or (command == "status" and len(argv) >= 4)
+        or (command == "write" and len(argv) == 3)
+    ):
         print(USAGE, file=sys.stderr)
         return 2
     task_dir = Path(argv[1])
     try:
-        if command == "status":
+        if command == "write":
+            print(render_write(task_dir, Path(argv[2])))
+        elif command == "status":
             changed = set_status(task_dir, argv[2], argv[3:])
             print(f"{argv[2]}: {', '.join(changed) if changed else 'нет открытых замечаний'}")
         else:
@@ -271,4 +396,5 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
+    sys.stdout.reconfigure(newline="\n")
     sys.exit(main(sys.argv[1:]))

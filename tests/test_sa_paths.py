@@ -6,7 +6,7 @@ from sa_paths import format_paths, main, resolve_paths
 @pytest.fixture
 def repos(tmp_path):
     root = tmp_path / "repos"
-    for name in ("lkp-back", "partners-dashboard", ".git"):
+    for name in ("lkp-back/.git", "partners-dashboard/.git", ".git", "notes", "system-docs/.git"):
         (root / name).mkdir(parents=True)
     (root / "system-docs/docs").mkdir(parents=True)
     (root / "system-docs/docs/bctc.md").write_text("x", encoding="utf-8")

@@ -28,9 +28,10 @@ def resolve_paths(env: Optional[Mapping[str, str]] = None, cwd: Optional[Path] =
     services = []
     if exists:
         docs_resolved = docs.resolve()
+        # Сервис — клон репозитория: папки без .git (заметки аналитика, tasks/) — не сервисы.
         services = sorted(
             p.name for p in root.iterdir()
-            if p.is_dir() and not p.name.startswith(".") and p.resolve() != docs_resolved
+            if p.is_dir() and not p.name.startswith(".") and (p / ".git").exists() and p.resolve() != docs_resolved
         )
     return {
         "tasks_dir": str(cwd / "tasks"),
@@ -62,4 +63,5 @@ def main(argv: list) -> int:
 
 
 if __name__ == "__main__":
+    sys.stdout.reconfigure(newline="\n")
     sys.exit(main(sys.argv[1:]))

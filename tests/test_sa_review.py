@@ -4,7 +4,8 @@ from conftest import write_review
 from sa_artifacts import ArtifactError
 from sa_draft import assemble, mark
 from sa_review import (
-    Finding, as_is, coverage, coverage_table, main, precheck, render_precheck, review_rows, review_summary, set_status,
+    Finding, as_is, build_review, coverage, coverage_table, main, precheck, render_precheck, review_rows, review_summary,
+    set_status,
 )
 from sa_state import file_sha1
 from sa_template import load_manifest
@@ -68,7 +69,8 @@ def test_precheck_needs_draft(draft_task):
 def test_as_is(draft_task):
     _rebuild(draft_task, "03-changes",
              "# Доработки\n\n1. Правило валидации промокода — добавить проверку владельца. ‹IM-02, IM-01›\n"
-             "2. Новый метод владельца промокода. ‹IM-01›\n3. Текст без ссылок на карту. ‹R-01›\n")
+             "2. Новый метод владельца промокода. ‹IM-01›\n3. Текст без ссылок на карту. ‹R-01›\n"
+             "4. **Новое поле** в существующей таблице. ‹IM-02›\n")
     _rebuild(draft_task, "08-testing",
              "# Тестирование и регресс\n\n## Новое поведение\n\n1. Новое ‹R-01›\n\n"
              "## Сохраняемое поведение\n\n- Анкета без промокода сохраняется. ‹R-01›\n- Формат проверяется. ‹IM-02›\n")
@@ -124,3 +126,59 @@ def test_precheck_unknown_question_placeholder(draft_task):
     assert Finding("важно", "02-architecture", "⚠ Q-PO-77: вопрос не найден в questions.md", "Q-PO-77",
                    "завести Q-PO-77 или убрать плейсхолдер") in findings
     assert not any("закрытом" in f.problem and "Q-PO-77" in f.problem for f in findings)
+
+
+def test_build_review_first_round(draft_task):
+    result = build_review(draft_task, [
+        {"severity": "важно", "where": "03-changes", "problem": "Нет кода | ответа", "ref": "IM-01", "proposal": "указать"},
+    ], [], today="2026-10-20")
+    text = (draft_task / "review.md").read_text(encoding="utf-8")
+    assert text.startswith(f"---\ndraft: {file_sha1(draft_task / 'draft.md')}\nreviewed: 2026-10-20\nround: 1\n---\n"
+                           "# Ревью черновика LKP-DEMO\n")
+    rows = review_rows(draft_task)
+    assert [r["ID"] for r in rows] == result["new"]
+    assert rows[-1]["Проблема"] == "Нет кода ¦ ответа"
+    assert all(r["Статус"] == "открыто" for r in rows)
+    assert any(r["Проблема"].startswith("R-03 (функц.) не покрыт") for r in rows)
+    assert coverage_table(draft_task) in text
+    assert result["round"] == 1 and result["closed"] == []
+
+
+def test_build_review_next_round(draft_task):
+    stale = "| RV-03 | важно | 02-architecture | ⚠ Q-PO-02: неизвестное не закрыто | Q-PO-02 | закрыть | открыто |"
+    lost = "| RV-04 | совет | 03-changes | Про исчезнувшее | IM-77 | убрать | открыто |"
+    kept = "| RV-05 | совет | 03-changes | Про исчезнувшее | IM-78 | убрать | принято |"
+    rejected = "| RV-06 | совет | весь черновик | Отклонённое | — | — | отклонено |"
+    write_review(draft_task, [ROW_OPEN, ROW_ADVICE, stale, lost, kept, rejected])
+    result = build_review(draft_task, [
+        {"severity": "совет", "where": "весь черновик", "problem": "Отклонённое", "ref": "—", "proposal": "—"},
+        {"severity": "важно", "where": "01-brd", "problem": "Новое", "ref": "R-01", "proposal": "поправить"},
+        {"severity": "важно", "where": "01-brd", "problem": "Новое", "ref": "R-01", "proposal": "поправить"},
+    ], ["RV-02"], today="2026-10-21")
+    rows = {r["ID"]: r for r in review_rows(draft_task)}
+    assert rows["RV-01"]["Проблема"] == "R-03 не покрыт" and rows["RV-01"]["Статус"] == "открыто"
+    assert [rows[i]["Статус"] for i in ("RV-02", "RV-03", "RV-04", "RV-05", "RV-06")] == [
+        "закрыто", "закрыто", "закрыто", "принято", "отклонено",
+    ]
+    assert result["closed"] == ["RV-02", "RV-03", "RV-04"]
+    problems = [rows[i]["Проблема"] for i in result["new"]]
+    assert problems.count("Новое") == 1 and "Отклонённое" not in problems
+    assert result["new"][0] == "RV-07"
+    assert result["round"] == 2
+    assert "round: 2" in (draft_task / "review.md").read_text(encoding="utf-8")
+    with pytest.raises(ArtifactError, match="RV-06 — отклонено"):
+        build_review(draft_task, [], ["RV-06"])
+    with pytest.raises(ArtifactError, match="нет замечания RV-99"):
+        build_review(draft_task, [], ["RV-99"])
+    with pytest.raises(ArtifactError, match="важность"):
+        build_review(draft_task, [{"severity": "x", "where": "a", "problem": "b", "ref": "—", "proposal": "c"}], [])
+
+
+def test_write_cli(draft_task, tmp_path, capsys):
+    payload = tmp_path / "new.json"
+    payload.write_text('{"new": [], "close": []}', encoding="utf-8")
+    assert main(["write", str(draft_task), str(payload)]) == 0
+    assert capsys.readouterr().out.startswith("round: 1\nзакрыто: —\nновых: RV-01")
+    payload.write_text("не json", encoding="utf-8")
+    assert main(["write", str(draft_task), str(payload)]) == 1
+    assert main(["write", str(draft_task)]) == 2
