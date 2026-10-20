@@ -25,8 +25,9 @@ EXISTING_IMPACT = ("изм.", "удал.")
 ROW_ID_RE = re.compile(r"^\|\s*(RV-\d{2,})\s*\|")
 PRESERVED = "[сохраняется]"
 EXISTING = "[существует]"
+MENTIONS = "[упоминает]"
 NO_SERVICE = "без сервиса"
-# Пункт про новый объект («Новый метод…», «**Новая таблица**…») — целевое поведение, а не утверждение о существующем.
+# Пункт про новый объект («Новый метод…», «**Новое поле** в таблице…»): сам объект не сверяется, только упомянутые в нём существующие.
 NEW_OBJECT_RE = re.compile(r"^\s*(?:[-*]\s+|\d+(?:\.\d+)*\.?\s+)?(?:\*\*)?Нов(?:ый|ая|ое|ые)\b")
 
 
@@ -152,6 +153,8 @@ def as_is(task_dir: Path) -> dict[str, list[str]]:
     [сохраняется] — пункт «Сохраняемое поведение» в «Тестировании и регрессе»: текущее поведение целиком.
     [существует] — строка любой секции со ссылкой на строку карты `изм.`/`удал.` с источником в коде: сверяется,
     что объект есть и сейчас устроен так, как сказано; само изменение — целевое поведение, его не оспаривают.
+    [упоминает] — такая же строка про новый объект («Новое поле … в таблице …»): новый объект не ищут, сверяют только
+    упомянутые в ней существующие (таблица, метод, топик, экран) — что они есть и так называются.
     """
     manifest, data, texts = _context(task_dir)
     services = {row["ID"]: row["Объект"].split(":", 1)[0].strip() for row in data["impact"]}
@@ -167,11 +170,11 @@ def as_is(task_dir: Path) -> dict[str, list[str]]:
             refs = trace_refs(line)
             if number in preserved:
                 kind = PRESERVED
-            elif NEW_OBJECT_RE.match(line) is None and any(r in existing for r in refs):
-                kind = EXISTING
+            elif any(r in existing for r in refs):
+                kind = MENTIONS if NEW_OBJECT_RE.match(line) else EXISTING
             else:
                 continue
-            owners = [r for r in refs if r in existing] if kind == EXISTING else refs
+            owners = [r for r in refs if r in existing] if kind in (EXISTING, MENTIONS) else refs
             names = list(dict.fromkeys(services[r] for r in owners if r in services)) or [NO_SERVICE]
             text_line = line.strip().removeprefix("- ").removeprefix("* ").strip()
             statement = f"{kind} {sid}: {text_line}"
