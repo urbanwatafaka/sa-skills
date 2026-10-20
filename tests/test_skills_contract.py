@@ -17,6 +17,7 @@ def test_tdd_impact_contract():
         _skill("tdd-impact"),
         (
             "allowed-tools: Bash(python3:*)",
+            "not_services",
             "sa_state.py init tasks/<KEY> <KEY>",
             "sa_ids.py next tasks/<KEY>",
             "sa_validate.py tasks/<KEY>",
@@ -53,6 +54,7 @@ def test_tdd_start_contract():
             "## Для PO",
             "sa_context.py scope tasks/<KEY>",
             "tdd-clarify/SKILL.md",
+            "шагу 4 «Анализ»",
             "decisions.md",
         ),
     )

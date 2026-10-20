@@ -18,6 +18,7 @@ def test_default_system_docs(repos):
     assert p["repos_exists"] is True
     assert p["index_files"] == ["bctc.md"]
     assert p["services"] == ["lkp-back", "partners-dashboard"]
+    assert p["not_services"] == ["notes"]
     assert p["system_docs"] == str(repos / "system-docs")
     assert p["index_dir"] == str(repos / "system-docs/docs")
 
@@ -66,18 +67,20 @@ def test_format(repos, tmp_path, monkeypatch):
     assert out == (
         f"tasks_dir: {tmp_path / 'tasks'}\n"
         f"repos_root: {repos} (есть)\n"
-        f"index_dir: {repos}/system-docs/docs\n"
+        f"index_dir: {repos / 'system-docs' / 'docs'}\n"
         "index_files: bctc.md\n"
-        "services: lkp-back, partners-dashboard"
+        "services: lkp-back, partners-dashboard\n"
+        "not_services (нет .git): notes"
     )
     missing = tmp_path / "nope"
     out = format_paths(resolve_paths({"SA_REPOS_ROOT": str(missing)}))
     assert out == (
         f"tasks_dir: {tmp_path / 'tasks'}\n"
         f"repos_root: {missing} (нет)\n"
-        f"index_dir: {missing}/system-docs/docs\n"
+        f"index_dir: {missing / 'system-docs' / 'docs'}\n"
         "index_files: нет\n"
-        "services: нет"
+        "services: нет\n"
+        "not_services (нет .git): нет"
     )
 
 

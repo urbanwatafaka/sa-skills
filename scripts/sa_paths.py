@@ -25,14 +25,15 @@ def resolve_paths(env: Optional[Mapping[str, str]] = None, cwd: Optional[Path] =
     docs = _absolute(docs_raw, env, cwd) if docs_raw else root / "system-docs"
     index_dir = docs / "docs"
     exists = root.is_dir()
-    services = []
+    services: list = []
+    skipped: list = []
     if exists:
         docs_resolved = docs.resolve()
-        # Сервис — клон репозитория: папки без .git (заметки аналитика, tasks/) — не сервисы.
-        services = sorted(
-            p.name for p in root.iterdir()
-            if p.is_dir() and not p.name.startswith(".") and (p / ".git").exists() and p.resolve() != docs_resolved
-        )
+        # Сервис — клон репозитория: папки без .git (заметки аналитика, tasks/) — не сервисы, их показываем отдельно.
+        for p in sorted(root.iterdir(), key=lambda x: x.name):
+            if not p.is_dir() or p.name.startswith(".") or p.resolve() == docs_resolved:
+                continue
+            (services if (p / ".git").exists() else skipped).append(p.name)
     return {
         "tasks_dir": str(cwd / "tasks"),
         "repos_root": str(root),
@@ -41,6 +42,7 @@ def resolve_paths(env: Optional[Mapping[str, str]] = None, cwd: Optional[Path] =
         "index_dir": str(index_dir),
         "index_files": [n for n in INDEX_NAMES if (index_dir / n).is_file()],
         "services": services,
+        "not_services": skipped,
     }
 
 
@@ -51,6 +53,7 @@ def format_paths(paths: dict) -> str:
         f"index_dir: {paths['index_dir']}",
         f"index_files: {', '.join(paths['index_files']) or 'нет'}",
         f"services: {', '.join(paths['services']) or 'нет'}",
+        f"not_services (нет .git): {', '.join(paths['not_services']) or 'нет'}",
     ])
 
 

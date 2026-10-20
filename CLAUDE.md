@@ -11,7 +11,7 @@
 
 ## Перед коммитом
 
-- `python -m pytest -q` — всё зелёное. Известное исключение на Windows: `tests/test_sa_paths.py::test_format` (сравнивает пути с `/`, на Windows печатаются `\`).
+- `python -m pytest -q` — всё зелёное.
 - Поменял скил, блок, шаблон или скрипт — поправь тесты-контракты (`tests/test_skills_contract.py`, `tests/test_shared_docs.py`) и фикстуру `tests/fixtures/LKP-DEMO/`, если она зависит от изменения.
 - Меняется структура шаблона ТЗ — подними `version` в `shared/templates/<тип>.yaml`. Заметная правка плагина — подними `version` в `.claude-plugin/plugin.json` и в тестах, которые её проверяют.
 
