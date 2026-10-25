@@ -128,10 +128,31 @@ partners ||--o{ promocodes
 
 def test_kafka_arrows_only_from_service():
     text = '@startuml\nautonumber "<b>[000]"\nparticipant "lkp-back" as back\nqueue "Kafka" as kafka\n' \
-        "back -> kafka: Event\nback --> kafka: Event\nkafka -> back: Event\nkafka [#red]--> back: Event\n@enduml\n"
+        "back -> kafka: pf-x — Event\nback --> kafka: pf-x — Event\nkafka -> back: Event\nkafka [#red]--> back: Event\n@enduml\n"
     errors = sa_puml.kind_errors("x-sequence.puml", text)
     assert [e.split(":", 1)[0] for e in errors] == ["строка 7", "строка 8"]
     assert "стрелка из kafka" in errors[0]
+
+
+def test_kafka_arrows_name_topic():
+    text = '@startuml\nautonumber "<b>[000]"\nparticipant "lkp-back" as back\nqueue "Kafka" as kafka\n' \
+        "back -> kafka: pf-payment-receipt-cmds — CreateReceiptCommandEvent\n" \
+        "back [#red]-> kafka: <color:red>lkp.questionnaire — QuestionnaireSavedEvent</color>\n" \
+        "back -[#red]-> kafka: ХХХХХ — NewEvent\n" \
+        "back -> kafka: QuestionnaireSavedEvent\n" \
+        "back --> kafka: SendEmailCommand — письмо партнёру\n@enduml\n"
+    errors = sa_puml.kind_errors("x-sequence.puml", text)
+    assert [e.split(":", 1)[0] for e in errors] == ["строка 8", "строка 9"]
+    assert "<топик> — <сообщение>" in errors[0]
+
+
+def test_c2_kafka_relations_name_topic():
+    text = '@startuml\nskinparam linetype ortho\nSystemQueue(kafka, "Kafka")\n' \
+        'Rel_D(back, kafka, "4) lkp.questionnaire — QuestionnaireSavedEvent")\n' \
+        'Rel_D(pd, kafka, "5) QuestionnaireSavedEvent", $tags="read")\n' \
+        'Rel_R(back, pd, "3) GET /internal/promocodes/{code}/owner")\n@enduml\n'
+    errors = sa_puml.kind_errors("x-c2.puml", text)
+    assert [e.split(":", 1)[0] for e in errors] == ["строка 5"]
 
 
 def test_gateway_prefix_on_arrows():

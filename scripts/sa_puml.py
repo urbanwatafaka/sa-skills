@@ -118,8 +118,17 @@ INCLUDE_RE = re.compile(r"^!include(?:url)?[ \t]+(\S+)", re.I)
 SEQ_FORBIDDEN = ("alt", "loop", "opt", "par", "break", "critical", "group")
 AUTONUMBER = 'autonumber "<b>[000]"'
 QUEUE_RE = re.compile(r'^queue[ \t]+(?:"[^"]*"[ \t]+as[ \t]+(\w+)|(\w+))', re.I)
-C2_REL_RE = re.compile(r'^Rel_(?:D|U|L|R|Down|Up|Left|Right)\(\s*[\w.]+\s*,\s*[\w.]+\s*,\s*"([^"]*)"')
+C2_REL_RE = re.compile(r'^Rel_(?:D|U|L|R|Down|Up|Left|Right)\(\s*([\w.]+)\s*,\s*([\w.]+)\s*,\s*"([^"]*)"')
 C2_NUMBER_RE = re.compile(r"^\d+\)")
+C2_QUEUE_RE = re.compile(r"^(?:System|Container)Queue(?:_Ext)?\(\s*(\w+)")
+# Подпись стрелки в Kafka: «<топик> — <сообщение>»; топик как в коде (с «.», «-» или «_») или ХХХХХ, пока не согласован.
+KAFKA_LABEL_RE = re.compile(r"^(?:[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)+|ХХХХХ)\s+—\s+\S")
+COLOR_TAG_RE = re.compile(r"</?color[^>]*>")
+KAFKA_LABEL_ERROR = "подпись стрелки в Kafka — «<топик> — <сообщение>»: pf-payment-receipt-cmds — CreateReceiptCommandEvent"
+
+
+def _kafka_label_ok(label: str) -> bool:
+    return bool(KAFKA_LABEL_RE.match(COLOR_TAG_RE.sub("", label).strip()))
 GATEWAY_PATH_RE = re.compile(r"(?<![\w/])/(?:api|backoffice|public|internal)/(?:api|backoffice|public|internal|v\d+)(?=/|\b)")
 
 
@@ -155,15 +164,22 @@ def kind_errors(name: str, text: str) -> list[str]:
                         f"строка {number}: стрелка из {queue} — Kafka только со стрелками от сервиса: "
                         "запись Svc -> Kafka, чтение Svc --> Kafka"
                     )
+                to_queue = re.match(rf"[\w.]+\s*(?:\[[^\]]*\])?\s*-+(?:\[[^\]]*\])?-?>+\s*{re.escape(queue)}\s*:(.*)$", line)
+                if to_queue and not _kafka_label_ok(to_queue.group(1)):
+                    errors.append(f"строка {number}: {KAFKA_LABEL_ERROR}")
     elif kind == "c2":
+        queues = {m.group(1) for m in map(C2_QUEUE_RE.match, lines) if m}
         if "skinparam linetype ortho" not in lines:
             errors.append("нет skinparam linetype ortho")
         for number, line in enumerate(lines, start=1):
             if line.startswith(("Rel(", "BiRel(")):
                 errors.append(f"строка {number}: связи только Rel_D/Rel_U/Rel_L/Rel_R")
             rel = C2_REL_RE.match(line)
-            if rel and not C2_NUMBER_RE.match(rel.group(1).strip()):
+            if rel and not C2_NUMBER_RE.match(rel.group(3).strip()):
                 errors.append(f"строка {number}: подпись связи начинается с номера шага: «1) …»")
+            if rel and queues & {rel.group(1), rel.group(2)}:
+                if not _kafka_label_ok(C2_NUMBER_RE.sub("", rel.group(3).strip())):
+                    errors.append(f"строка {number}: {KAFKA_LABEL_ERROR}")
     elif kind == "er":
         if "hide circle" not in lines:
             errors.append("нет hide circle")

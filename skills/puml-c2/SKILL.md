@@ -37,8 +37,8 @@ SystemQueue(kafka, "Kafka")
 Rel_D(merchant, front, "1) Сохраняет анкету")
 Rel_D(front, back, "2) POST /api/questionnaires")
 Rel_R(back, pd, "3) GET /internal/promocodes/{code}/owner")
-Rel_D(back, kafka, "4) QuestionnaireSavedEvent")
-Rel_D(pd, kafka, "5) QuestionnaireSavedEvent", $tags="read")
+Rel_D(back, kafka, "4) lkp.questionnaire — QuestionnaireSavedEvent")
+Rel_D(pd, kafka, "5) lkp.questionnaire — QuestionnaireSavedEvent", $tags="read")
 @enduml
 ```
 
@@ -49,7 +49,7 @@ Rel_D(pd, kafka, "5) QuestionnaireSavedEvent", $tags="read")
 - Компоновка сверху вниз: инициатор наверху, системы и БД ниже по уровням вызовов; по возможности ближе к квадрату. Перед связями выпиши граф смежности: связанные элементы — соседи, элемент с многими связями (общая БД) — с края цепочки, связи разводи в разные стороны.
 - Каждая связь начинается с номера `1)`, `2)` … в порядке старта процесса.
 - Одиночный внутренний сервис — `System()`, внешняя система — `System_Ext()`. `System_Boundary` — только рамка вокруг нескольких вложенных `Container`/`ContainerDb`, одиночным блоком его не используй: получится пустой белый прямоугольник.
-- Kafka — `SystemQueue(kafka, "Kafka")`, не подпись на связи сервис→сервис. Стрелки от сервиса к Kafka: запись — сплошная, чтение — `$tags="read"`. Несколько событий одного сервиса в одну сторону — одной связью с перечислением.
+- Kafka — `SystemQueue(kafka, "Kafka")`, не подпись на связи сервис→сервис. Стрелки от сервиса к Kafka: запись — сплошная, чтение — `$tags="read"`. Подпись связи с Kafka — `N) <топик> — Событие`: топик, как в коде или конфиге и в «Топиках Кафка»; не согласован — `ХХХХХ` и `⚠ Q-SA-xx`. Несколько событий одного сервиса в одну сторону — одной связью с перечислением пар `топик — Событие` через «;».
 - Без цветовой маркировки нового, если аналитик не попросил.
 - Элементы — только системы из карты влияния в скоупе и роли BRD.
 
@@ -57,7 +57,7 @@ Rel_D(pd, kafka, "5) QuestionnaireSavedEvent", $tags="read")
 
 - [ ] Каждый элемент есть в карте влияния или ролях BRD.
 - [ ] У каждой связи есть номер `N)`, связи только `Rel_D/U/L/R`.
-- [ ] Kafka — отдельный `SystemQueue`, чтение пунктиром.
+- [ ] Kafka — отдельный `SystemQueue`, чтение пунктиром, на каждой связи с Kafka — топик.
 - [ ] `!includeurl` с полным `https://` URL.
 
 ## Проверка
