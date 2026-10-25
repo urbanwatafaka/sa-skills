@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from sa_validate import main, validate_state, validate_task
 
 
@@ -297,13 +299,28 @@ def test_draft_placeholders(draft_task):
 
 
 def test_draft_stubs(draft_task):
-    _write(draft_task, "08-testing", "# Тестирование и регресс", "Не применимо: нечего проверять ‹R-01›")
+    _write(draft_task, "08-testing", "# Тестирование и регресс", ":::expand Тестирование и регресс\nНе применимо: нечего проверять ‹R-01›\n:::")
     _write(draft_task, "06-configs", "# Конфиги", "- Без изменений")
     _write(draft_task, "03-changes", "# Доработки", "**3. БД:**\n\nИзменений схемы БД не требуется — поле есть. ‹R-01›")
     _assemble(draft_task)
     assert validate_task(draft_task) == [
         "draft/06-configs.md: заглушка «Без изменений» — раздел или пункт без содержания не создаётся",
         "draft/08-testing.md: заглушка «Не применимо» — раздел или пункт без содержания не создаётся",
+    ]
+
+
+@pytest.mark.parametrize("body", [
+    "## Новое поведение\n\n1. Новое ‹R-01›",
+    ":::expand Тестирование и регресс\n## Новое поведение\n\n1. Новое ‹R-01›",
+    ":::expand Регресс\n1. Новое ‹R-01›\n:::",
+    "Вводный абзац ‹R-01›\n\n:::expand Тестирование и регресс\n1. Новое ‹R-01›\n:::",
+    ":::expand Тестирование и регресс\n1. Новое ‹R-01›\n:::\n\nХвост ‹R-01›",
+])
+def test_draft_testing_collapsed(draft_task, body):
+    _write(draft_task, "08-testing", "# Тестирование и регресс", body)
+    _assemble(draft_task)
+    assert validate_task(draft_task) == [
+        "draft/08-testing.md: весь раздел — внутри «:::expand Тестирование и регресс» … «:::» сразу после заголовка"
     ]
 
 
@@ -365,7 +382,7 @@ def test_draft_gateway_prefix_in_text(draft_task):
 def test_draft_dangling_item_ref(draft_task):
     _write(draft_task, "03-changes", "# Доработки",
            "1. Найти пользователя ‹R-01›\n   1. Не найден — создать учётную запись (п.2).\n2. Создать учётную запись ‹R-01›")
-    _write(draft_task, "08-testing", "# Тестирование и регресс", "Проверить п.2 и п. 7 ‹R-01›")
+    _write(draft_task, "08-testing", "# Тестирование и регресс", ":::expand Тестирование и регресс\nПроверить п.2 и п. 7 ‹R-01›\n:::")
     _assemble(draft_task)
     assert validate_task(draft_task) == [
         "draft/08-testing.md: «п.7» — такого пункта нет; номера пунктов при правке не сдвигай, ссылки сверь"

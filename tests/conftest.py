@@ -22,7 +22,8 @@ def write_sections(task_dir: Path, body: str = "Текст секции ‹R-01�
     draft = task_dir / "draft"
     draft.mkdir(exist_ok=True)
     for section in load_manifest("feature").sections:
-        (draft / f"{section.id}.md").write_text(f"{section.heading}\n\n{body}\n", encoding="utf-8")
+        text = f":::expand {section.title}\n{body}\n:::" if section.block == "testing" else body
+        (draft / f"{section.id}.md").write_text(f"{section.heading}\n\n{text}\n", encoding="utf-8")
 
 
 @pytest.fixture

@@ -270,6 +270,12 @@ def validate_context(text: str, known: dict, template: str | None) -> tuple[list
     return errors, None
 
 
+def collapsed(text: str, title: str) -> bool:
+    """Секция после заголовка целиком свёрнута в один блок `:::expand <title>` … `:::`."""
+    lines = [line.strip() for line in text.splitlines() if line.strip()][1:]
+    return len(lines) >= 2 and lines[0] == f":::expand {title}" and lines[-1] == ":::"
+
+
 def _is_sha1(value) -> bool:
     return isinstance(value, str) and SHA1_RE.fullmatch(value) is not None
 
@@ -434,6 +440,8 @@ def validate_draft(task_dir: Path, state: dict, known: dict) -> list[str]:
         first = next((line.strip() for line in text.splitlines() if line.strip()), "")
         if first != s.heading:
             errors.append(f"{rel}: первая строка должна быть «{s.heading}»")
+        if s.block == "testing" and not collapsed(text, s.title):
+            errors.append(f"{rel}: весь раздел — внутри «:::expand {s.title}» … «:::» сразу после заголовка")
         for stub in stubs(text):
             errors.append(f"{rel}: заглушка «{stub}» — раздел или пункт без содержания не создаётся")
         for ref in CODE_REF_RE.findall(text):
