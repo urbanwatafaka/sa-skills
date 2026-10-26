@@ -161,6 +161,14 @@ def test_gateway_prefix_on_arrows():
     assert errors == ["строка 3: «/api/backoffice…» — префикс шлюза; метод пиши, как он объявлен в сервисе"]
 
 
+def test_er_fields_described():
+    text = '@startuml\nhide circle\nentity "public.Receipts" as receipts {\n' \
+        "  * Id : uuid//Id чека\n  --\n  <color:red>OriginalReceiptId : uuid//Id исходного чека, который заменяет этот</color>\n" \
+        "  Status : text\n  <color:red>IsReplaced : boolean//</color>\n}\n@enduml\n"
+    errors = sa_puml.kind_errors("x-er.puml", text)
+    assert errors == [f"строка {n}: {sa_puml.ER_FIELD_NOTE_ERROR}" for n in (7, 8)]
+
+
 def test_c2_relations_numbered():
     text = '@startuml\nskinparam linetype ortho\nRel_D(a, b, "1) вызов")\nRel_R(b, c, "запрос")\n' \
         'Rel_U(c, d, " 12) ответ", $tags="read")\n@enduml\n'

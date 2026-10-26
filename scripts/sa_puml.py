@@ -125,6 +125,9 @@ C2_QUEUE_RE = re.compile(r"^(?:System|Container)Queue(?:_Ext)?\(\s*(\w+)")
 KAFKA_LABEL_RE = re.compile(r"^(?:[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)+|ХХХХХ)\s+—\s+\S")
 COLOR_TAG_RE = re.compile(r"</?color[^>]*>")
 KAFKA_LABEL_ERROR = "подпись стрелки в Kafka — «<топик> — <сообщение>»: pf-payment-receipt-cmds — CreateReceiptCommandEvent"
+# Поле ER-таблицы с описанием после «//»: «OriginalReceiptId : uuid//Id исходного чека, который заменяет этот».
+ER_FIELD_NOTE_RE = re.compile(r"//\s*\S")
+ER_FIELD_NOTE_ERROR = "поле без описания — «Имя : тип//что хранит поле»"
 
 
 def _kafka_label_ok(label: str) -> bool:
@@ -183,6 +186,15 @@ def kind_errors(name: str, text: str) -> list[str]:
     elif kind == "er":
         if "hide circle" not in lines:
             errors.append("нет hide circle")
+        in_entity = False
+        for number, line in enumerate(lines, start=1):
+            if line.lower().startswith("entity") and line.endswith("{"):
+                in_entity = True
+            elif in_entity and line.startswith("}"):
+                in_entity = False
+            elif in_entity and line and not line.startswith(("--", "..", "==", "'")):
+                if not ER_FIELD_NOTE_RE.search(COLOR_TAG_RE.sub("", line)):
+                    errors.append(f"строка {number}: {ER_FIELD_NOTE_ERROR}")
     return errors
 
 
