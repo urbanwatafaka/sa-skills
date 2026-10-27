@@ -147,12 +147,31 @@ def test_kafka_arrows_name_topic():
 
 
 def test_c2_kafka_relations_name_topic():
-    text = '@startuml\nskinparam linetype ortho\nSystemQueue(kafka, "Kafka")\n' \
-        'Rel_D(back, kafka, "4) lkp.questionnaire — QuestionnaireSavedEvent")\n' \
-        'Rel_D(pd, kafka, "5) QuestionnaireSavedEvent", $tags="read")\n' \
+    text = '@startuml\nskinparam linetype ortho\nAddRelTag("kafka", $lineStyle = DashedLine())\n' \
+        'Rel_D(back, pd, "4) Kafka: lkp.questionnaire — QuestionnaireSavedEvent", $tags="kafka")\n' \
+        'Rel_D(back, mail, "4) Kafka: lkp.questionnaire —\\nQuestionnaireSavedEvent", $tags="kafka")\n' \
+        'Rel_D(pd, back, "5) Kafka: QuestionnaireSavedEvent", $tags="kafka")\n' \
+        'Rel_D(pd, back, "6) lkp.questionnaire — QuestionnaireSavedEvent", $tags="kafka")\n' \
+        'Rel_L(pd, back, "7) Kafka: lkp.promo — PromoUsedEvent")\n' \
         'Rel_R(back, pd, "3) GET /internal/promocodes/{code}/owner")\n@enduml\n'
     errors = sa_puml.kind_errors("x-c2.puml", text)
-    assert [e.split(":", 1)[0] for e in errors] == ["строка 5"]
+    assert [e.split(":", 1)[0] for e in errors] == ["строка 6", "строка 7", "строка 8"]
+    assert "N) Kafka: <топик> — <Событие>" in errors[0]
+    assert '$tags="kafka"' in errors[2]
+
+
+def test_c2_kafka_node_is_warning(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(sa_puml, "find_renderer", lambda: None)
+    text = '@startuml\nskinparam linetype ortho\nSystemQueue(kafka, "Kafka")\n' \
+        'Rel_D(back, kafka, "1) lkp.questionnaire — QuestionnaireSavedEvent")\n@enduml\n'
+    assert sa_puml.kind_errors("x-c2.puml", text) == []
+    warnings = sa_puml.kind_warnings("x-c2.puml", text)
+    assert [w.split(":", 1)[0] for w in warnings] == ["строка 3"]
+    assert sa_puml.kind_warnings("x-sequence.puml", 'queue kafka\n') == []
+    path = tmp_path / "02-architecture-c2.puml"
+    path.write_text(text, encoding="utf-8")
+    assert main(["check", str(path)]) == 0
+    assert "предупреждение: 02-architecture-c2.puml: строка 3: узел Kafka на C2" in capsys.readouterr().out
 
 
 def test_gateway_prefix_on_arrows():

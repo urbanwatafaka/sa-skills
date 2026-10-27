@@ -150,7 +150,8 @@ def test_puml_skills_contract():
             assert "<color:red>" in text, name
     c2 = _skill("puml-c2")
     assert "!includeurl https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml" in c2
-    assert "SystemQueue(kafka" in c2
+    assert "SystemQueue" not in c2
+    assert 'AddRelTag("kafka", $lineStyle = DashedLine())' in c2 and '$tags="kafka"' in c2
     assert 'autonumber "<b>[000]"' in _skill("puml-sequence")
     assert "[001]" in _skill("puml-activity")
 

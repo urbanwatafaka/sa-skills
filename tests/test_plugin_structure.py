@@ -22,7 +22,7 @@ def _frontmatter(text: str) -> dict[str, str]:
 def test_plugin_manifest():
     data = json.loads((ROOT / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))
     assert data["name"] == "sa-skills"
-    assert data["version"] == "0.8.4"
+    assert data["version"] == "0.9.0"
     assert data["description"]
 
 
