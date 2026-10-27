@@ -124,7 +124,7 @@ PUML_SKILLS = ("puml-c2", "puml-sequence", "puml-activity", "puml-er", "puml-sta
 def test_puml_skills_contract():
     import re
 
-    from sa_puml import kind_errors, structural_errors
+    from sa_puml import kind_errors, kind_warnings, structural_errors
 
     for name in PUML_SKILLS:
         text = _skill(name)
@@ -148,6 +148,7 @@ def test_puml_skills_contract():
         assert structural_errors(sample.group(1)) + kind_errors(f"x-{kind}.puml", sample.group(1)) == [], name
         if name != "puml-c2":
             assert "<color:red>" in text, name
+        assert kind_warnings(f"x-{kind}.puml", sample.group(1)) == [], name
     c2 = _skill("puml-c2")
     assert "!includeurl https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml" in c2
     assert "SystemQueue" not in c2

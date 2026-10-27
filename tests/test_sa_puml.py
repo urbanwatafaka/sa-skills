@@ -162,8 +162,8 @@ def test_c2_kafka_relations_name_topic():
 
 def test_c2_kafka_node_is_warning(tmp_path, capsys, monkeypatch):
     monkeypatch.setattr(sa_puml, "find_renderer", lambda: None)
-    text = '@startuml\nskinparam linetype ortho\nSystemQueue(kafka, "Kafka")\n' \
-        'Rel_D(back, kafka, "1) lkp.questionnaire — QuestionnaireSavedEvent")\n@enduml\n'
+    text = '@startuml\n!$TECHN_FONT_SIZE = 11\nSystemQueue(kafka, "Kafka")\nskinparam linetype ortho\n' \
+        'skinparam nodesep 320\nRel_D(back, kafka, "1) lkp.questionnaire — QuestionnaireSavedEvent")\n@enduml\n'
     assert sa_puml.kind_errors("x-c2.puml", text) == []
     warnings = sa_puml.kind_warnings("x-c2.puml", text)
     assert [w.split(":", 1)[0] for w in warnings] == ["строка 3"]
@@ -172,6 +172,16 @@ def test_c2_kafka_node_is_warning(tmp_path, capsys, monkeypatch):
     path.write_text(text, encoding="utf-8")
     assert main(["check", str(path)]) == 0
     assert "предупреждение: 02-architecture-c2.puml: строка 3: узел Kafka на C2" in capsys.readouterr().out
+
+
+def test_c2_readability_warnings():
+    loose = '@startuml\nskinparam linetype ortho\nskinparam nodesep 120\n@enduml\n'
+    warnings = sa_puml.kind_warnings("x-c2.puml", loose)
+    assert len(warnings) == 2
+    assert "!$TECHN_FONT_SIZE = 11" in warnings[0] and "nodesep 120" in warnings[1]
+    assert "не задан" in sa_puml.kind_warnings("x-c2.puml", "@startuml\n@enduml\n")[1]
+    tight = '@startuml\n!$TECHN_FONT_SIZE = 11\nskinparam nodesep 300\n@enduml\n'
+    assert sa_puml.kind_warnings("x-c2.puml", tight) == []
 
 
 def test_gateway_prefix_on_arrows():

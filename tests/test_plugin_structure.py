@@ -22,7 +22,7 @@ def _frontmatter(text: str) -> dict[str, str]:
 def test_plugin_manifest():
     data = json.loads((ROOT / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))
     assert data["name"] == "sa-skills"
-    assert data["version"] == "0.9.0"
+    assert data["version"] == "0.9.1"
     assert data["description"]
 
 
@@ -66,7 +66,8 @@ def test_plugin_file_references_exist():
 
 
 def test_no_shell_variables_in_prompts():
-    pattern = re.compile(r"\$\{?[A-Z_]{2,}")
+    # «!$TECHN_FONT_SIZE» — переменная препроцессора PlantUML, не shell.
+    pattern = re.compile(r"(?<!!)\$\{?[A-Z_]{2,}")
     files = [*ROOT.glob("skills/*/SKILL.md"), *ROOT.glob("agents/*.md"), *ROOT.glob("shared/**/*.md")]
     assert files
     found = [f"{f.relative_to(ROOT)}: {m.group(0)}" for f in files for m in pattern.finditer(f.read_text(encoding="utf-8"))]

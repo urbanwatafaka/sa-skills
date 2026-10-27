@@ -123,6 +123,8 @@ C2_NUMBER_RE = re.compile(r"^\d+\)")
 C2_KAFKA_TAG_RE = re.compile(r'\$tags\s*=\s*"[^"]*\bkafka\b')
 C2_KAFKA_PREFIX = "Kafka: "
 C2_KAFKA_LABEL_ERROR = "подпись связи через Kafka — «N) Kafka: <топик> — <Событие>»: 8) Kafka: pf-payment-receipt-cmds — CreateReceiptCommandEvent"
+C2_FONT_RE = re.compile(r"^!\$TECHN_FONT_SIZE\s*=")
+C2_NODESEP_RE = re.compile(r"^skinparam\s+nodesep\s+(\d+)", re.I)
 C2_QUEUE_RE = re.compile(r"^(?:System|Container)Queue(?:_Ext)?\(\s*(\w+)")
 # Подпись стрелки в Kafka: «<топик> — <сообщение>»; топик как в коде (с «.», «-» или «_») или ХХХХХ, пока не согласован.
 KAFKA_LABEL_RE = re.compile(r"^(?:[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)+|ХХХХХ)\s+—\s+\S")
@@ -211,11 +213,17 @@ def kind_warnings(name: str, text: str) -> list[str]:
     if re.sub(r"-\d+$", "", Path(name).stem).rsplit("-", 1)[-1] != "c2":
         return []
     lines = [line.strip() for line in text.splitlines()]
-    return [
+    warnings = [
         f"строка {number}: узел Kafka на C2 — убери его, связь через Kafka рисуй пунктиром "
         f'от продюсера к консьюмеру: Rel_D(a, b, "N) Kafka: <топик> — <Событие>", $tags="kafka")'
         for number, line in enumerate(lines, start=1) if C2_QUEUE_RE.match(line)
     ]
+    if not any(C2_FONT_RE.match(line) for line in lines):
+        warnings.append("нет !$TECHN_FONT_SIZE = 11 до !includeurl — шрифт подписей и блоков разный, подписи налезают на блоки")
+    nodesep = next((int(m.group(1)) for m in map(C2_NODESEP_RE.match, lines) if m), 0)
+    if nodesep < 300:
+        warnings.append(f"skinparam nodesep {nodesep or 'не задан'} — нужно не меньше 300 (каркас — 320), иначе подписи перекрываются блоками")
+    return warnings
 
 
 def find_renderer() -> list[str] | None:
