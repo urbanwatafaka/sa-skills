@@ -126,6 +126,17 @@ C2_KAFKA_LABEL_ERROR = "подпись связи через Kafka — «N) Kafk
 C2_FONT_RE = re.compile(r"^!\$TECHN_FONT_SIZE\s*=")
 C2_NODESEP_RE = re.compile(r"^skinparam\s+nodesep\s+(\d+)", re.I)
 C2_QUEUE_RE = re.compile(r"^(?:System|Container)Queue(?:_Ext)?\(\s*(\w+)")
+C2_SYSTEM_RE = re.compile(r"^System\(")
+C2_CONTAINER_RE = re.compile(r"^Container(?:Db)?\(")
+C2_BOUNDARY_RE = re.compile(r"^System_Boundary\(")
+C2_TAGS_RE = re.compile(r'\$tags\s*=\s*"[^"]*\b(?:new|changed)\b')
+PAIR_RE = re.compile(
+    r'^(?P<src>[\w.]+)\s*(?:\[[^\]]*\]\s*)?(?P<arrow>-{1,2}(?:\[[^\]]*\])?-?>{1,2})\s*(?P<dst>[\w.]+)\s*:'
+)
+COLOR_IN_ARROW_RE = re.compile(r"\[[^\]]*\]")
+ACTIVATION_RE = re.compile(r"^(activate|deactivate)[ \t]+([\w.]+)", re.I)
+# Блок активации без ответа инициатору длиннее стольких шагов — признак активации «на весь процесс».
+SEQ_ACTIVATION_MAX = 20
 # Подпись стрелки в Kafka: «<топик> — <сообщение>»; топик как в коде (с «.», «-» или «_») или ХХХХХ, пока не согласован.
 KAFKA_LABEL_RE = re.compile(r"^(?:[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)+|ХХХХХ)\s+—\s+\S")
 COLOR_TAG_RE = re.compile(r"</?color[^>]*>")
@@ -208,9 +219,65 @@ def kind_errors(name: str, text: str) -> list[str]:
     return errors
 
 
+def _message(line: str) -> tuple[str, str, bool] | None:
+    """Отправитель, получатель и признак ответа (пунктир) у сообщения sequence."""
+    match = PAIR_RE.match(line)
+    if not match:
+        return None
+    arrow = COLOR_IN_ARROW_RE.sub("", match.group("arrow"))
+    return match.group("src"), match.group("dst"), arrow.count("-") >= 2
+
+
+def sequence_warnings(text: str) -> list[str]:
+    """Блок активации, который покрывает больше одного вызова: после ответа инициатору участник продолжает работу."""
+    raw = [line.strip() for line in text.splitlines()]
+    steps = {line: step for step, line, _ in sequence_steps(text)}
+    opened: dict[str, dict] = {}
+    warnings: list[str] = []
+    last: tuple[str, str, bool] | None = None
+    for number, line in enumerate(raw, start=1):
+        match = ACTIVATION_RE.match(line)
+        if match:
+            verb, who = match.group(1).lower(), match.group(2)
+            if verb == "activate" and who not in opened:
+                caller = last[0] if last and last[1] == who and not last[2] else None
+                opened[who] = {"line": number, "caller": caller, "answered": False, "warned": False, "steps": 0}
+            elif verb == "deactivate":
+                opened.pop(who, None)
+            continue
+        if number not in steps:
+            continue
+        message = _message(line)
+        if message is None:
+            continue
+        src, dst, reply = message
+        for who, block in opened.items():
+            block["steps"] += 1
+            involved = who in (src, dst)
+            if block["answered"] and involved and not block["warned"]:
+                block["warned"] = True
+                warnings.append(
+                    f"строка {block['line']}: {who} активен и после ответа инициатору (шаг [{steps[number]:03d}]) — "
+                    "закрой блок deactivate после ответа или callback, следующую обработку начни новым блоком (puml-sequence)"
+                )
+            if block["caller"] and src == who and dst == block["caller"] and reply:
+                block["answered"] = True
+            if block["steps"] > SEQ_ACTIVATION_MAX and not block["warned"]:
+                block["warned"] = True
+                warnings.append(
+                    f"строка {block['line']}: {who} активен больше {SEQ_ACTIVATION_MAX} шагов без ответа инициатору — "
+                    "блок активации от вызова до ответа или callback, не на весь процесс (puml-sequence)"
+                )
+        last = message
+    return warnings
+
+
 def kind_warnings(name: str, text: str) -> list[str]:
     """Предупреждения по виду диаграммы — не ошибка, проверку не валят."""
-    if re.sub(r"-\d+$", "", Path(name).stem).rsplit("-", 1)[-1] != "c2":
+    kind = re.sub(r"-\d+$", "", Path(name).stem).rsplit("-", 1)[-1]
+    if kind == "sequence":
+        return sequence_warnings(text)
+    if kind != "c2":
         return []
     lines = [line.strip() for line in text.splitlines()]
     warnings = [
@@ -220,6 +287,15 @@ def kind_warnings(name: str, text: str) -> list[str]:
     ]
     if not any(C2_FONT_RE.match(line) for line in lines):
         warnings.append("нет !$TECHN_FONT_SIZE = 11 до !includeurl — шрифт подписей и блоков разный, подписи налезают на блоки")
+    warnings += [
+        f"строка {number}: сервис блоком System() — на C2 сервисы ПФ2 рисуй Container внутри "
+        'System_Boundary(pf2, "Prodamus PF2"), внешние системы — System_Ext'
+        for number, line in enumerate(lines, start=1) if C2_SYSTEM_RE.match(line)
+    ]
+    if any(C2_CONTAINER_RE.match(line) for line in lines) and not any(C2_BOUNDARY_RE.match(line) for line in lines):
+        warnings.append('нет рамки System_Boundary(pf2, "Prodamus PF2") вокруг контейнеров ПФ2')
+    if any(C2_TAGS_RE.search(line) for line in lines) and "SHOW_LEGEND()" not in lines:
+        warnings.append("элементы с тегами new/changed без SHOW_LEGEND() — легенда не показана")
     nodesep = next((int(m.group(1)) for m in map(C2_NODESEP_RE.match, lines) if m), 0)
     if nodesep < 300:
         warnings.append(f"skinparam nodesep {nodesep or 'не задан'} — нужно не меньше 300 (каркас — 320), иначе подписи перекрываются блоками")

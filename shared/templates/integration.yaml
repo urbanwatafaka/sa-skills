@@ -1,0 +1,69 @@
+# Шаблон ТЗ «интеграция платёжного метода» — канон типа 1 плюс DoR интеграции.
+# Эталоны: 110167390 (оформление документа), 110167970 (интеграция Яндекс СБП), шаблон DoR — 80282060.
+# addons — дополнительные блоки секции поверх block: dor (таблицы DoR в BRD), payment-method (справочники, адаптер, маппинг ПФ1).
+# Плоское подмножество YAML: «ключ: значение», списки [a, b]. Разбирает scripts/sa_template.py.
+# block — файл shared/blocks/<block>.md или —; im_kinds — виды строк карты влияния для среза секции ([] — все в скоупе).
+# level — уровень заголовка секции: 1 (# …, по умолчанию) или 2 (## … внутри предыдущего раздела).
+# Порядок секций фиксирован. Необязательная секция без содержания не создаётся — заглушек нет.
+# «Открытые вопросы» собирает sa_draft.py assemble из questions.md, отдельного файла секции нет.
+name: integration
+version: 1.0
+title: ТЗ на интеграцию платёжного метода
+sections:
+  - id: 01-brd
+    title: BRD
+    block: brd
+    addons: [dor]
+    required: true
+    diagrams: []
+    im_kinds: []
+  - id: 02-architecture
+    title: Архитектура и Процесс
+    block: architecture
+    required: true
+    diagrams: [c2, sequence]
+    im_kinds: []
+  - id: 03-changes
+    title: Доработки
+    block: changes
+    addons: [payment-method]
+    required: true
+    diagrams: [er]
+    im_kinds: []
+  - id: 04-kafka
+    title: Топики Кафка
+    block: kafka
+    required: false
+    level: 2
+    diagrams: []
+    im_kinds: [Kafka]
+  - id: 05-dependent
+    title: Зависимые процессы и сервисы
+    block: dependent
+    required: false
+    diagrams: []
+    im_kinds: [процесс]
+  - id: 06-configs
+    title: Конфиги
+    block: configs
+    required: false
+    diagrams: []
+    im_kinds: [конфиг]
+  - id: 07-access
+    title: Доступы
+    block: access
+    required: false
+    diagrams: []
+    im_kinds: [роль]
+  - id: 08-testing
+    title: Тестирование и регресс
+    block: testing
+    required: true
+    diagrams: []
+    im_kinds: []
+  - id: 09-release
+    title: Условия релиза
+    block: release
+    required: false
+    diagrams: []
+    im_kinds: [UI]

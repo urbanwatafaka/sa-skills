@@ -184,6 +184,53 @@ def test_c2_readability_warnings():
     assert sa_puml.kind_warnings("x-c2.puml", tight) == []
 
 
+def test_c2_container_notation_warnings():
+    head = '@startuml\n!$TECHN_FONT_SIZE = 11\nskinparam nodesep 320\n'
+    old = head + 'System(back, "lkp-back")\nSystem_Ext(ext, "DaData")\n@enduml\n'
+    warnings = sa_puml.kind_warnings("x-c2.puml", old)
+    assert len(warnings) == 1 and warnings[0].startswith("строка 4: сервис блоком System()")
+    no_frame = head + 'Container(back, "lkp-back", ".NET", "Бэкенд", $tags = "new")\n@enduml\n'
+    warnings = sa_puml.kind_warnings("x-c2.puml", no_frame)
+    assert any("System_Boundary" in w for w in warnings) and any("SHOW_LEGEND" in w for w in warnings)
+    good = head + 'System_Boundary(pf2, "Prodamus PF2") {\nContainer(back, "lkp-back", ".NET", "Бэкенд", $tags = "new")\n}\nSHOW_LEGEND()\n@enduml\n'
+    assert sa_puml.kind_warnings("x-c2.puml", good) == []
+
+
+ACTIVATION_SEQ = """\
+@startuml
+autonumber "<b>[000]"
+participant "gw" as gw
+participant "trx" as trx
+participant "markups" as markups
+gw -> trx: POST /internal/transactions
+activate trx
+trx --> gw: 200
+{close}
+trx -> markups: POST /internal/markup-rates
+activate markups
+markups --> trx: курс
+deactivate markups
+{close_late}
+@enduml
+"""
+
+
+def test_sequence_activation_until_reply():
+    narrow = ACTIVATION_SEQ.format(close="deactivate trx", close_late="")
+    assert sa_puml.kind_warnings("x-sequence.puml", narrow) == []
+    wide = ACTIVATION_SEQ.format(close="", close_late="deactivate trx")
+    warnings = sa_puml.kind_warnings("x-sequence.puml", wide)
+    assert len(warnings) == 1
+    assert warnings[0].startswith("строка 7: trx активен и после ответа инициатору (шаг [003])")
+
+
+def test_sequence_long_activation_without_reply():
+    lines = ['@startuml', 'autonumber "<b>[000]"', 'actor "П" as payer', 'participant "p" as page', 'activate payer']
+    lines += ["payer -> page: шаг"] * 21 + ["deactivate payer", "@enduml"]
+    warnings = sa_puml.kind_warnings("x-sequence.puml", "\n".join(lines))
+    assert len(warnings) == 1 and "payer активен больше 20 шагов" in warnings[0]
+
+
 def test_gateway_prefix_on_arrows():
     text = '@startuml\nautonumber "<b>[000]"\nA -> B: GET /api/backoffice/v1/orders\nA -> B: GET /backoffice/orders\n@enduml\n'
     errors = sa_puml.kind_errors("x-sequence.puml", text)

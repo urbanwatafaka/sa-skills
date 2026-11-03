@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from sa_artifacts import ArtifactError
@@ -28,6 +28,8 @@ class Section:
     diagrams: list[str]
     im_kinds: list[str]
     level: int = 1
+    # Дополнительные блоки секции (shared/blocks/<addon>.md) — правила поверх основного блока.
+    addons: list[str] = field(default_factory=list)
 
     @property
     def heading(self) -> str:
@@ -82,7 +84,13 @@ def _section(item: dict) -> Section:
     level = LEVELS.get(str(item.get("level", "1")))
     if level is None:
         raise ArtifactError(f"секция {sid}: level — 1 или 2")
-    return Section(sid, item["title"], block, item["required"], item["diagrams"], item["im_kinds"], level)
+    addons = item.get("addons", [])
+    if not isinstance(addons, list):
+        raise ArtifactError(f"секция {sid}: addons — список вида [a, b]")
+    for addon in addons:
+        if not (BLOCKS_DIR / f"{addon}.md").exists():
+            raise ArtifactError(f"секция {sid}: нет блока shared/blocks/{addon}.md")
+    return Section(sid, item["title"], block, item["required"], item["diagrams"], item["im_kinds"], level, addons)
 
 
 def parse_manifest(text: str, name: str) -> Manifest:

@@ -38,6 +38,7 @@ from sa_draft import (
     task_manifest,
     trace_refs,
 )
+from sa_integration import ADDON_CHECKS
 from sa_puml import kind_errors, step_ref_errors, structural_errors
 from sa_review import COVERAGE_COLUMNS, REVIEW_COLUMNS, SEVERITIES, STATUSES, WHOLE, coverage
 from sa_state import ACCESS_KEYS, ACCESS_MODES, ARTIFACTS, STAGES, TEMPLATE_RE, file_sha1, load_state
@@ -440,6 +441,9 @@ def validate_draft(task_dir: Path, state: dict, known: dict) -> list[str]:
         first = next((line.strip() for line in text.splitlines() if line.strip()), "")
         if first != s.heading:
             errors.append(f"{rel}: первая строка должна быть «{s.heading}»")
+        for addon in s.addons:
+            check = ADDON_CHECKS.get(addon)
+            errors += [f"{rel}: {e}" for e in (check(text) if check else [])]
         if s.block == "testing" and not collapsed(text, s.title):
             errors.append(f"{rel}: весь раздел — внутри «:::expand {s.title}» … «:::» сразу после заголовка")
         for stub in stubs(text):

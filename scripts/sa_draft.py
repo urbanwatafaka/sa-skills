@@ -463,6 +463,7 @@ def plan(task_dir: Path) -> str:
         else:
             status = "есть"
         block = f"blocks/{s.block}.md" if s.block else "—"
+        block += "".join(f" + blocks/{addon}.md" for addon in s.addons)
         kind = "обязательная" if s.required else "необязательная"
         lines.append(f"{s.id} | {s.title} | {kind} | блок: {block} | диаграммы: {_fmt(s.diagrams)} | {status}")
         r_ids, im_ids, d_ids = _slice(s, data)

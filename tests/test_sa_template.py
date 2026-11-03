@@ -71,8 +71,24 @@ def test_parse_errors(old, new, message):
 
 
 def test_missing_manifest():
-    with pytest.raises(ArtifactError, match="шаблона integration нет"):
-        load_manifest("integration")
+    with pytest.raises(ArtifactError, match="шаблона nope нет"):
+        load_manifest("nope")
+
+
+def test_integration_manifest():
+    manifest = load_manifest("integration")
+    assert (manifest.name, manifest.version) == ("integration", "1.0")
+    assert [s.id for s in manifest.sections] == [s.id for s in load_manifest("feature").sections]
+    addons = {s.id: s.addons for s in manifest.sections if s.addons}
+    assert addons == {"01-brd": ["dor"], "03-changes": ["payment-method"]}
+    assert all(not s.addons for s in load_manifest("feature").sections)
+
+
+def test_addons_must_exist():
+    with pytest.raises(ArtifactError, match="нет блока shared/blocks/nope.md"):
+        parse_manifest(MINI.replace("block: changes", "block: changes\n    addons: [nope]", 1), "mini")
+    with pytest.raises(ArtifactError, match="addons — список"):
+        parse_manifest(MINI.replace("block: changes", "block: changes\n    addons: dor", 1), "mini")
 
 
 def test_bad_name():
@@ -83,5 +99,7 @@ def test_bad_name():
 def test_cli_version(capsys):
     assert main(["version", "feature"]) == 0
     assert capsys.readouterr().out == "feature@2.0\n"
-    assert main(["version", "integration"]) == 1
+    assert main(["version", "integration"]) == 0
+    assert capsys.readouterr().out == "integration@1.0\n"
+    assert main(["version", "nope"]) == 1
     assert main([]) == 2
